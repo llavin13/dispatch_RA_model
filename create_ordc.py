@@ -13,8 +13,40 @@ import time
 
 start_time = time.time() #record start time so can know how long this version of the script takes
 
+def no_ordc(raw_input_dir, case_dir,n_segments):
+    '''
+    this gets called and creates a ORDC timepoint file with *NO* (=0) price for all segements
+    so effectively no value for reserves. This is meant to pseudo-imitate previous PJM practice
+    though this could easily be updated to just create any "current" type of heuristic PJM ORDC
+    '''
+    print('running creation of ORDC, but will have 0 prices')
+    
+    load_df = pd.read_csv(os.path.join(case_dir,"timepoints_zonal.csv"))
+    
+    timepoint_list = list(load_df.timepoint.unique())
+    segment_list = list(range(1,n_segments+1))
+    full_timepoint_list = []
+    full_segment_list = []
+    
+    for t in timepoint_list:
+        for s in segment_list:
+            full_timepoint_list.append(t)
+            full_segment_list.append(s)
+    
+    full_MW_list = [100]*len(full_segment_list)
+    full_price_list = [0]*len(full_segment_list)
+    
+    
+    segment_df = pd.DataFrame({'timepoint':full_timepoint_list,
+              'segments':full_segment_list,
+              'MW':full_MW_list,
+              'Price':full_price_list})
+        
+    return segment_df
+    
+
 def load_and_run_ordc(raw_input_dir, case_dir,
-                      month, hydro_cf, VOLL, lowcutLOLP, n_segments): #this should be run from the main script, if desired, with appropriate inputs
+                      month, hydro_cf, VOLL, lowcutLOLP, n_segments, dynamic_ORDC): #this should be run from the main script, if desired, with appropriate inputs
     print('running creation of new ORDC')
     #things to eventually pass
     #(1) Month of case
@@ -26,20 +58,28 @@ def load_and_run_ordc(raw_input_dir, case_dir,
     #general inputs from raw
     planned_out_df = pd.read_csv(os.path.join(raw_input_dir,"scheduled.outage.rate.by.gen.type.FULL.PERIOD.032519.csv"))
     forced_out_df = pd.read_csv(os.path.join(raw_input_dir,"Forced.outage.rates.by.temperature.and.unit.type.102918.csv"))
+    fixed_forced_out_df = pd.read_csv(os.path.join(raw_input_dir,"fixed_FORs.csv"))
+    
+    #user-defined inputs
+    scenario_inputs_directory = os.path.join(raw_input_dir, "case_creation_input")
+    zonal_inputs = pd.read_csv(os.path.join(scenario_inputs_directory,"LDA_to_zone.csv"),index_col=0)
     
     #based on the specific case
     load_df = pd.read_csv(os.path.join(case_dir,"timepoints_zonal.csv"))
     wind_solar_df = pd.read_csv(os.path.join(case_dir,"zones.csv"))
     gen_df = pd.read_csv(os.path.join(case_dir,"PJM_generators_full.csv"))
-    temp_df = pd.read_csv(os.path.join(case_dir,"timepoints_index.csv"))
+    temp_df = pd.read_csv(os.path.join(case_dir,"timepoints_index_allweather.csv"),index_col=0)
+    scheduled_outage_df = pd.read_csv(os.path.join(case_dir,"PJM_generators_scheduled_outage.csv"))
     
     return create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_out_df,
-                       month, hydro_cf, VOLL, lowcutLOLP, n_segments, case_dir)
+                       month, hydro_cf, VOLL, lowcutLOLP, n_segments, fixed_forced_out_df, 
+                       dynamic_ORDC, scheduled_outage_df, zonal_inputs)
 
 
 #this is basically just a test script for getting the ORDC formulation to work
 def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_out_df,
-                month, hydro_cf, VOLL, lowcutLOLP, n_segments, case_dir):
+                month, hydro_cf, VOLL, lowcutLOLP, n_segments, fixed_forced_out_df, 
+                dynamic_ORDC, scheduled_outage_df, zonal_inputs):
     
     #create generator stack on unit marginal cost
     gen_type_capacity = gen_df
@@ -59,9 +99,6 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
         else:
             derate_capacity.append(gen_type_capacity.loc[g]["Month_Capacity"])
     gen_type_capacity['Month_Capacity_Derated'] = derate_capacity
-    
-    #print gentype_capacity
-    gen_type_capacity.to_csv(os.path.join(case_dir,"gentype_capacity.csv"), index=False)
     
     #create hourly load
     hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
@@ -86,6 +123,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     gen_list = []
     gentype_list = []
     zone_list = []
+    temperature_list = []
     dispatch_list = []
     for t in hourly_all.index.tolist():
         load = hourly_all.loc[t]["net_load"]
@@ -100,37 +138,50 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
             time_list.append(t)
             gen_list.append(genindex)
             gentype_list.append(gen_type_capacity.loc[genindex]["Category"])
+            matched_temperature_ID = zonal_inputs.loc[gen_type_capacity.loc[genindex]["Zone"]]["assigned_WBAN"]
+            matched_temperature = temp_df.loc[_np.int64(t)][str(matched_temperature_ID)]
+            temperature_list.append(matched_temperature) #need real temps here soon
             zone_list.append(gen_type_capacity.loc[genindex]["Zone"])
             dispatch_list.append(dispatch)
     
-    hourly_stack = pd.DataFrame({'timepoint':time_list, 
+    hourly_stack_wtemp = pd.DataFrame({'timepoint':time_list, 
                   'Index':gen_list,
                   'Category':gentype_list,
                   'Zone':zone_list,
+                  'Temperature': temperature_list,
                  'Dispatch':dispatch_list})
     
     #append hourly prevailing pjm temperature to df
-    hourly_stack_wtemp = pd.merge(hourly_stack, temp_df, on="timepoint")
+    #hourly_stack_wtemp = pd.merge(hourly_stack, temp_df, on="timepoint")
     
     #round temperatures to nearest 5 degrees, append C.
-    hourly_stack_wtemp['rounded_temp']=hourly_stack_wtemp.temperature.apply(lambda x: custom_round(x, base=5))
+    hourly_stack_wtemp['rounded_temp']=hourly_stack_wtemp.Temperature.apply(lambda x: custom_round(x, base=5))
     
-    #append outage probability to the df based on said temperature and unit type
+    #append outage probability to the df based on temperature and unit type
+    #only do based on temperature if case chooses to do so...
     forced_out_df.rename(columns ={'Unnamed: 0': "Category"}, inplace =True)
+    fixed_forced_out_df.rename(columns ={'Unit_Type': "Category"}, inplace =True)
     try:
         forced_out_df = forced_out_df.set_index("Category")
     except KeyError:
         pass
-    
+    try:
+        fixed_forced_out_df = fixed_forced_out_df.set_index("Category")
+    except KeyError:
+        pass
     matched_forced_outage = []
+
     for index in hourly_stack_wtemp.index.tolist():
-        match_temp = hourly_stack_wtemp.loc[index]['rounded_temp']
-        match_category = hourly_stack_wtemp.loc[index]['Category']
-        matched_forced_outage.append(float(forced_out_df.loc[match_category][match_temp]))
+        if dynamic_ORDC:
+            match_temp = hourly_stack_wtemp.loc[index]['rounded_temp']
+            match_category = hourly_stack_wtemp.loc[index]['Category']
+            matched_forced_outage.append(float(forced_out_df.loc[match_category][match_temp]))
+        else:
+            match_category = hourly_stack_wtemp.loc[index]['Category']
+            matched_forced_outage.append(float(fixed_forced_out_df.loc[match_category]['FOR']))
+            
     hourly_stack_wtemp['GenFOR']=matched_forced_outage
     
-    #write the hourly stack file so can be used to create plots
-    hourly_stack_wtemp.to_csv(os.path.join(case_dir,"stack_dispatch.csv"), index=False)
     #manual outage dist for now but can add later
     manual_outage_dist = _np.array([[.05, 0.16887827],
         [.1, 0.11924128],
@@ -161,11 +212,6 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
         print('original conventional dispatch for hour ' + str(t) + ' is ' + str(hourly_stack_wtemp.Dispatch[hourly_stack_wtemp.timepoint==t].sum()))
         copt_table = copt_calc(hourly_stack_wtemp[hourly_stack_wtemp.timepoint==t],manual_outage_dist)
         #hourly_copt_list.append(copt_calc(hourly_stack_wtemp[hourly_stack_wtemp.timepoint==t],manual_outage_dist))
-        
-        #write copt table of first hour to file
-        if t==1:
-            copt_df = pd.DataFrame(copt_table)
-            copt_df.to_csv(os.path.join(case_dir,"copt_array.csv"), index=False)
         
         #lowcut_lolp = .00001 #cutoff lolp for min segment, probably want to do this as input but OK for now
         #n_segments = 10 #segments in ORDC, probably want to do this as input but OK for now

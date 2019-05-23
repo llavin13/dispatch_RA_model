@@ -39,8 +39,10 @@ def scenario_inputs(inputs_directory):
                      model_script.dispatch_model.pmin,
                      model_script.dispatch_model.startcost,
                      model_script.dispatch_model.canspin,
+                     model_script.dispatch_model.cannonspin,
                      model_script.dispatch_model.minup,
-                     model_script.dispatch_model.mindown)
+                     model_script.dispatch_model.mindown,
+                     model_script.dispatch_model.noloadcost)
               )
               
     data.load(filename=os.path.join(inputs_directory, "initialize_generators.csv"),
@@ -80,13 +82,17 @@ def scenario_inputs(inputs_directory):
     data.load(filename=os.path.join(inputs_directory, "zones.csv"),
               index=model_script.dispatch_model.ZONES,
               param=(model_script.dispatch_model.windcap,
-                     model_script.dispatch_model.solarcap)
+                     model_script.dispatch_model.solarcap,
+                     model_script.dispatch_model.totalhydro)
               )          
 
     data.load(filename=os.path.join(inputs_directory, "timepoints_zonal.csv"),
               param=(model_script.dispatch_model.grossload,
                      model_script.dispatch_model.windcf,
-                     model_script.dispatch_model.solarcf)
+                     model_script.dispatch_model.solarcf,
+                     model_script.dispatch_model.maxhydro,
+                     model_script.dispatch_model.minhydro,
+                     model_script.dispatch_model.ramphydro)
               ) 
 
     data.load(filename=os.path.join(inputs_directory, "transmission_lines.csv"),
@@ -99,7 +105,16 @@ def scenario_inputs(inputs_directory):
                      model_script.dispatch_model.transmission_to,
                      model_script.dispatch_model.transmission_from_capacity,
                      model_script.dispatch_model.transmission_to_capacity,
-                     model_script.dispatch_model.line_losses_frac)
+                     model_script.dispatch_model.hurdle_rate)
+              )
+    
+    data.load(filename=os.path.join(inputs_directory,"generator_segments.csv"),
+              index=model_script.dispatch_model.GENERATORSEGMENTS,
+              param=(model_script.dispatch_model.generatorsegmentlength)
+              )
+    
+    data.load(filename=os.path.join(inputs_directory,"generator_segment_marginalcost.csv"),
+              param=(model_script.dispatch_model.generatormarginalcost)
               )
               
     return data

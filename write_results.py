@@ -39,6 +39,7 @@ def export_results(instance, results, results_directory, debug_mode):
     ordc_segments_set = sorted(instance.SEGMENTS)
     zones_set = sorted(instance.ZONES)
     transmission_lines_set = sorted(instance.TRANSMISSION_LINE)
+    generatorsegment_set = sorted(instance.GENERATORSEGMENTS)
     
     # Call various export functions, throw debug errors if problem and desired
     
@@ -47,6 +48,13 @@ def export_results(instance, results, results_directory, debug_mode):
         export_generator_dispatch(instance, timepoints_set, generators_set, zones_set, results_directory)
     except Exception as err:
         msg = "ERROR exporting generator dispatch! Check export_generator_dispatch()."
+        handle_exception(msg, debug_mode)
+    
+    # Export segmented generator dispatch
+    try:
+        export_generator_segment_dispatch(instance, timepoints_set, generators_set, zones_set, generatorsegment_set, results_directory)
+    except Exception as err:
+        msg = "ERROR exporting segmented generator dispatch! Check export_generator_segment_dispatch()."
         handle_exception(msg, debug_mode)
         
     #export zonal prices
@@ -74,7 +82,13 @@ def export_results(instance, results, results_directory, debug_mode):
     except Exception as err:
         msg = "ERROR exporting reserve segments! Check export_reserve_segment_commits()."
         handle_exception(msg, debug_mode)
-    
+
+    try:
+        export_VREs(instance, results_directory)
+    except Exception as err:
+        msg = "ERROR exporting VRE results! Check export_VREs()."
+        handle_exception(msg, debug_mode)
+        
     #return call
     return None
 
@@ -145,15 +159,33 @@ def export_generator_dispatch(instance, timepoints_set, generators_set, zones_se
     df = pd.DataFrame(results_dispatch_np, index=pd.Index(index_name))
     df.to_csv(os.path.join(results_directory,"generator_dispatch.csv"))
     
+def export_generator_segment_dispatch(instance, timepoints_set, generators_set, zones_set, generatorsegment_set, results_directory):
+    
+    results_dispatch = []
+    index_name = []
+    for z in zones_set:   
+        for g in generators_set:
+            for gs in generatorsegment_set:
+                index_name.append(z+"-"+str(g)+"-" +str(gs))
+                for t in timepoints_set:
+                    results_dispatch.append(format_2f(instance.segmentdispatch[t,g,z,gs].value))
+    results_dispatch_np = np.reshape(results_dispatch, (int(len(results_dispatch)/len(timepoints_set)), int(len(timepoints_set))))
+    df = pd.DataFrame(results_dispatch_np, index=pd.Index(index_name))
+    df.to_csv(os.path.join(results_directory,"generator_segment_dispatch.csv"))
+    
+    
 def export_zonal_price(instance, timepoints_set, zones_set, results_directory):
     
     results_prices = []
     index_name = []
+    timepoints_list = []
     for z in zones_set:
         for t in timepoints_set:
-            index_name.append(z+"-"+str(t))
+            index_name.append(z)
             results_prices.append(format_2f(instance.dual[instance.LoadConstraint[t,z]]))
-    df = pd.DataFrame(np.asarray(results_prices),index=pd.Index(index_name))
+            timepoints_list.append(t)
+    df = pd.DataFrame({'hour': timepoints_list, 'LMP':np.asarray(results_prices)},
+                       index=pd.Index(index_name))
     df.to_csv(os.path.join(results_directory,"zonal_prices.csv"))
     
 def export_lines(instance, timepoints_set, transmission_lines_set, results_directory):
@@ -182,7 +214,7 @@ def export_generator_commits_reserves(instance, timepoints_set, generators_set, 
     results_shuts = []
     results_hourson = []
     results_hoursoff = []
-    results_spinreserves = []
+    results_allreserves = []
     index_name = []
     for g in generators_set:
         for t in timepoints_set:
@@ -203,11 +235,11 @@ def export_generator_commits_reserves(instance, timepoints_set, generators_set, 
                 results_hourson.append(results_hourson[-1]+instance.commitment[t,g].value)
                 results_hoursoff.append(results_hoursoff[-1]+(1-instance.commitment[t,g].value))
                 
-            results_spinreserves.append(format_2f(instance.spinreserves[t,g].value))
+            results_allreserves.append(format_2f(instance.spinreserves[t,g].value + instance.nonspinreserves[t,g].value))
     col_names = ['Gen_Index','timepoint','Committed','Started','Shut','TimeOn','TimeOff','Held as Reserves (MW)']
     df = pd.DataFrame(data=np.column_stack((np.asarray(results_gens), np.asarray(results_time), np.asarray(results_commitment),
                                             np.asarray(results_starts), np.asarray(results_shuts),np.asarray(results_hourson),
-                                            np.asarray(results_hoursoff), np.asarray(results_spinreserves))),
+                                            np.asarray(results_hoursoff), np.asarray(results_allreserves))),
                       columns=col_names,index=pd.Index(index_name))
     df.to_csv(os.path.join(results_directory,"generator_commits_reserves.csv"), index=False)
     
@@ -222,3 +254,22 @@ def export_reserve_segment_commits(instance, timepoints_set, ordc_segments_set, 
     col_names = ['MW on reserve segment']
     df = pd.DataFrame(data=(np.asarray(results_segments)),columns=col_names,index=pd.Index(index_name))
     df.to_csv(os.path.join(results_directory,"reserve_segment_commit.csv"))
+    
+def export_VREs(instance, results_directory):
+    
+    results_wind = []
+    results_solar = []
+    results_curtailment = []
+    tmps = []
+    zones = []
+    
+    for t in instance.TIMEPOINTS:
+        for z in instance.ZONES:
+            tmps.append(t)
+            zones.append(z)
+            results_wind.append(instance.windgen[t,z].value)
+            results_solar.append(instance.solargen[t,z].value)
+            results_curtailment.append(instance.curtailment[t,z].value)
+            
+    VRE = pd.DataFrame({"timepoint": tmps, "zone": zones, "wind":results_wind, "solar": results_solar, "curtailment":results_curtailment})
+    VRE.to_csv(os.path.join(results_directory,"renewable_generation.csv"), index=False)

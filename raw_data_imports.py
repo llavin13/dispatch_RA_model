@@ -10,14 +10,16 @@ from os.path import join
 import pandas as pd
 import numpy as np
 import sys
+import math
 from datetime import datetime
 from datetime import timedelta
 from dateutil import parser
 
-def load_data(inputs_directory, scenario_inputs_directory):
+from case_inputs import *
+
+def load_data(inputs_directory, scenario_inputs_directory, date):
     print('begin loading data...')
     #load base data; this is not pickled so it's always re-loaded by case
-    base_inputs = pd.read_csv(os.path.join(scenario_inputs_directory,"base_inputs.csv"),index_col=0)
     
     #load other stuff
     #this stuff is loaded from pickles for speed, but be careful if you edit the underlying file
@@ -50,24 +52,46 @@ def load_data(inputs_directory, scenario_inputs_directory):
     units = pd.read_csv(os.path.join(inputs_directory,"PJM.units.processed.071818.csv"))
     units_zonal_match = pd.read_csv(os.path.join(inputs_directory,"GENERATORS_LL.csv"))
     
+    #load zonal loads
+    load_data = pd.read_csv(os.path.join(inputs_directory,"PJM_zonal_loads.csv"))
+    
     #load generator scheduled outages
     scheduled_outages = pd.read_csv(os.path.join(inputs_directory,"fraction.unavailable.Jan14.csv"), index_col=0)
     
+    #load hub-level gas price data
+    gas_hub_prices = pd.read_csv(os.path.join(inputs_directory,"gasprice_jan2014.csv"), index_col=0) #index will be the hubname
+    
     #load hydro derates
-    hydro_derates = pd.read_csv(os.path.join(inputs_directory,"PJM.hydro.gen.jan.2014.csv"))
+    hydro_sheet_csv = str(hydro_sheet)+".csv"
+    hydro_derates = pd.read_csv(os.path.join(inputs_directory,hydro_sheet_csv))
+    
+    #load hydro params
+    hydro_params = pd.read_csv(os.path.join(inputs_directory,"hydro_params.csv"), index_col=0)
     
     #load line flow data
     line_limits = pd.read_csv(os.path.join(inputs_directory,"da_interface_flows_and_limits_full.csv"))
     
     print('end loading data, begin cleaning data...')
     
-    
     #create cleaning dates
-    startdate = parser.parse(base_inputs.loc['Begin Date']['value'])
-    enddate = startdate + timedelta(days=int(base_inputs.loc['Duration']['value']), hours=-1)
+    startdate = parser.parse(date)
+    enddate = startdate + timedelta(days, hours=-1)
+    enddate_max = startdate + timedelta(math.ceil(days), hours=-1) #use only for things that need to look through whole day
+    enddate_min = startdate + timedelta(1,hours=-1) #always just the same day
+    
+    #clean hydro params
+    clean_hydro_params = hydro_param_clean(hydro_params, startdate+timedelta(0,hours=1), enddate+timedelta(0,hours=1))
+    
+    #clean loads
+    clean_zonal_loads = zonal_load_clean(load_data, startdate+timedelta(0,hours=1), enddate+timedelta(0,hours=1))
     
     #clean scheduled generator outages
-    clean_scheduled_outages = scheduled_outage_clean(scheduled_outages, startdate, enddate)
+    #-1 date because scheduled outages are based on what was known the previous day
+    clean_scheduled_outages = scheduled_outage_clean(scheduled_outages, 
+                                                     startdate+timedelta(-1), enddate_max+timedelta(-1))
+    
+    #clean gas prices
+    clean_gas_hub_prices = gas_price_clean(gas_hub_prices, startdate, enddate_min) #so that this always pulls only one gas price
     
     #clean line flow limits
     clean_line_limits = line_clean(line_limits, startdate, enddate)
@@ -88,37 +112,43 @@ def load_data(inputs_directory, scenario_inputs_directory):
     gens = gens_time_clean(gens, startdate, enddate)
     
     #add dr
-    cost_string = base_inputs.value[7].strip('$')
-    DR_cost =  int(cost_string.replace(',','')) #cost of DR is set to the VOLL by default
+    DR_cost = VOLL   #cost of DR is set to the VOLL by default
+
     listOfSeries = [pd.Series([1846,(max(gens.X)+1),1,1,1,'DR1','DR1','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','1/1/1980','NA','NA','NA','NA','NA','NA','NA','NA','NA','DR'
-          ,'NA',10000,'NA','NA','NA','NA','PECO',DR_cost], index=gens.columns),
+          ,'NA',10000,'NA','NA','NA','NA','PECO',DR_cost,0,1,1,1,1], index=gens.columns),
     pd.Series([1847,(max(gens.X)+2),1,1,1,'DR2','DR2','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','1/1/1980','NA','NA','NA','NA','NA','NA','NA','NA','NA','DR'
-          ,'NA',100000,'NA','NA','NA','NA','COMED',DR_cost], index=gens.columns),
+          ,'NA',10000,'NA','NA','NA','NA','COMED',DR_cost,0,1,1,1,1], index=gens.columns),
     pd.Series([1848,(max(gens.X)+3),1,1,1,'DR3','DR3','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','1/1/1980','NA','NA','NA','NA','NA','NA','NA','NA','NA','DR'
-          ,'NA',10000,'NA','NA','NA','NA','PEPCO',DR_cost], index=gens.columns),
+          ,'NA',10000,'NA','NA','NA','NA','PEPCO',DR_cost,0,1,1,1,1], index=gens.columns),
     pd.Series([1849,(max(gens.X)+4),1,1,1,'DR4','DR4','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','1/1/1980','NA','NA','NA','NA','NA','NA','NA','NA','NA','DR'
-          ,'NA',10000,'NA','NA','NA','NA','DOM',DR_cost], index=gens.columns),
+          ,'NA',10000,'NA','NA','NA','NA','DOM',DR_cost,0,1,1,1,1], index=gens.columns),
     pd.Series([1850,(max(gens.X)+5),1,1,1,'DR5','DR5','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA','NA'
           ,'NA','NA','NA','NA','NA','NA','1/1/1980','NA','NA','NA','NA','NA','NA','NA','NA','NA','DR'
-          ,'NA',10000,'NA','NA','NA','NA','PPL',DR_cost], index=gens.columns)]
+          ,'NA',10000,'NA','NA','NA','NA','PPL',DR_cost,0,1,1,1,1], index=gens.columns)]
     gens = gens.append(listOfSeries, ignore_index=True)
     
     #clean loads
     #this is the part that's taking the longest, so work on it at some point
-    loadMW = loads_time_clean(loads, startdate, enddate)
+    loadMW = loads_time_clean(loads, startdate+timedelta(0,hours=1), enddate+timedelta(0,hours=1))
+    
+    # summarize base_inputs for use later (note: could simplify now that inputs are via script in case_inputs.py)
+    base_inputs = pd.DataFrame({"value":[date, days, wfe, sfe, lfe, zones, n_segments, VOLL, contingency, lowcutLOLP, hydro_cf, n_generator_segments]},
+                               index= ["Begin Date", "Duration", "Wind forecast error", "Solar forecast error", "Load forecast error",
+                                       "Zones", "Demand Curve Segments", "VOLL", "Contingency Reserve Shed", "lowcutLOLP", "hydrocf", "n_generator_segments"])
     
     print('...return loaded and cleaned data')
     return (base_inputs, forced_outage_rates, gens, loadMW[0], temperatures, wind, solar, loadMW[1], 
-            clean_line_limits, wind_capacity, solar_capacity, clean_scheduled_outages, hydro_derates)
+            clean_line_limits, wind_capacity, solar_capacity, clean_scheduled_outages, hydro_derates,
+            clean_gas_hub_prices, clean_zonal_loads, clean_hydro_params)
 
 def str_to_datetime(my_str):
     '''
@@ -133,6 +163,14 @@ def generator_module(units, zones):
     unit_zone = pd.merge(units, zones, on='X', how='outer')
     return unit_zone
 
+def zonal_load_clean(load_df, startdate, enddate):
+    '''
+    takes df of loads, cleans to only include active timeperiod
+    '''
+    load_output = load_df
+    load_output['date'] = load_output['Local Datetime (Hour Ending)']
+    return load_output[(load_output.date.apply(str_to_datetime) >= startdate) & (enddate >= load_output.date.apply(str_to_datetime))]
+
 def scheduled_outage_clean(outage_df, startdate, enddate):
     '''
     takes df of scheduled outage by unit, cleans to include only active timeperiod for case
@@ -140,6 +178,14 @@ def scheduled_outage_clean(outage_df, startdate, enddate):
     scheduled_outage_output = outage_df
     scheduled_outage_output['date']=scheduled_outage_output.index
     return scheduled_outage_output[(scheduled_outage_output.date.apply(str_to_datetime) >= startdate) & (enddate >= scheduled_outage_output.date.apply(str_to_datetime))]
+
+def gas_price_clean(gasprice_df, startdate, enddate):
+    '''
+    takes df of gas prices at different hubs, cleans to include only active timeperiod for case
+    '''
+    gasprice_df['date'] = gasprice_df['Delivery Date']
+    clean_gasprice_df = gasprice_df[(gasprice_df.date.apply(str_to_datetime) >= startdate) & (enddate >= gasprice_df.date.apply(str_to_datetime))]
+    return clean_gasprice_df
 
 def line_clean(lines, startdate, enddate):
     '''
@@ -198,9 +244,17 @@ def temperature_time_clean(temps, startdate, enddate):
     takes df of temperatures, subsets and combines relevant location temperatures
     '''
     temps = temps.rename(columns={ temps.columns[0]: "date" })
-    temps = temps.rename(columns={ temps.columns[1]: "usedweather" })
+    #temps = temps.rename(columns={ temps.columns[1]: "usedweather" }) #if you just wanted first column, but now defunct
     temps = temps[(temps.date.apply(str_to_datetime) >= startdate) & (enddate >= temps.date.apply(str_to_datetime))]
-    return temps.usedweather
+    return temps
+
+def hydro_param_clean(hydro_df, startdate, enddate):
+    '''
+    cleans hydro parameters to leave only the active dates
+    '''
+    clean_hydro_df = hydro_df
+    clean_hydro_df['date']=clean_hydro_df.index
+    return clean_hydro_df[(clean_hydro_df.date.apply(str_to_datetime) >= startdate) & (enddate >= clean_hydro_df.date.apply(str_to_datetime))]
     
 
 def input_to_pickle(data_path, csv_string):
