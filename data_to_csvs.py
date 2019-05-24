@@ -232,7 +232,7 @@ def create_hourly_lines(lines, zone_list, load_df_for_timepoints):
                     to_zone.append(l)
                     min_flow.append(0)
                     max_flow.append(0)
-                    hurdle_rate.append(2)
+                    hurdle_rate.append(.25) #hurdle rate hopefully just reflects incremental loss cost
             count_l+=1
         count_z+=1
     df = pd.DataFrame({'timepoint': time_index,
@@ -325,6 +325,8 @@ def create_scheduled_outage_file(n_timepoints, list_gens, unitmatch_ID, outage_s
     '''
     takes a number of timepoints, and a list of the generators, and creates an outage schedule
     also takes in data on which units have scheduled outages
+    scheduled outages are based on what was known at 6PM the previous day; i.e. around when the Day Ahead...
+    ...Market would have cleared
     '''
     time_list = []
     gens_list = []
@@ -339,7 +341,7 @@ def create_scheduled_outage_file(n_timepoints, list_gens, unitmatch_ID, outage_s
                 scheduled_out = outage_schedule.iloc[match_time][match_ID] #reindexed because these are daily now
                 #scheduled_out = outage_schedule.iloc[t-1][match_ID] #old indexing
             except (KeyError, TypeError) as e: #this is for when the ID doesn't work
-                scheduled_out = 0
+                scheduled_out = 0 #just assume generator is fully available if it cannot match
             time_list.append(t)
             gens_list.append(g)
             scheduled_list.append(1-scheduled_out)
@@ -452,9 +454,9 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
     if init:
         out_init = create_gens_init(gens_w_zone)
         out_init.to_csv(os.path.join(results_directory,"initialize_generators.csv"), index=False)
-    pjm_out_full = gens_w_zone[['X','UNITNAME','ZONE','ID6_y','RATINGMW_y','marginalcost','can_spin']]
+    pjm_out_full = gens_w_zone[['X','UNITNAME','ZONE','ID6_y','RATINGMW_y','marginalcost','can_spin','UTILUNIT_y']]
     pjm_out_full = pjm_out_full.sort_values('X')
-    pjm_out_full.columns = ['Gen_Index',	'Name', 'Zone',	'Category',	'Capacity',	'Fuel_Cost',	'Can_Spin']
+    pjm_out_full.columns = ['Gen_Index',	'Name', 'Zone',	'Category',	'Capacity',	'Fuel_Cost',	'Can_Spin', 'UTILUNIT']
     pjm_out_full.to_csv(os.path.join(results_directory,"PJM_generators_full.csv"), index=False)
     
     #create generator segments

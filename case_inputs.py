@@ -7,7 +7,7 @@ Created on Thu Apr 18 08:46:48 2019
 """
 
 #scenario_name = "TEST2" cases are now named below based on their corresponding date
-case_folder = "Jan2014_withORDC"
+case_folder = "Jan_4_10_2014_withORDC"
 
 # initialization boolean list should match length of dates
 make_init_list = [True, False, False, False, False, False, False]
@@ -40,9 +40,9 @@ lowcutLOLP = 0.00001
 n_segments = 10
 
 #(6) number of days to run after each start date
-days = 1.25 #this will create a six hour look ahead period
+days = 1.25 #additional .25 creates a six hour look ahead period
 
-#(7) forecast errors
+#(7) forecast errors, though not currently active
 wfe = 0.01
 sfe = 0.01
 lfe = 0.01

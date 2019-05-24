@@ -56,7 +56,8 @@ def load_data(inputs_directory, scenario_inputs_directory, date):
     load_data = pd.read_csv(os.path.join(inputs_directory,"PJM_zonal_loads.csv"))
     
     #load generator scheduled outages
-    scheduled_outages = pd.read_csv(os.path.join(inputs_directory,"fraction.unavailable.Jan14.csv"), index_col=0)
+    #scheduled_outages = pd.read_csv(os.path.join(inputs_directory,"fraction.unavailable.Jan14.csv"), index_col=0)
+    scheduled_outages = pd.read_csv(os.path.join(inputs_directory,"fraction.unavailable.xNCRSU7.all.050919.csv"), index_col=0)
     
     #load hub-level gas price data
     gas_hub_prices = pd.read_csv(os.path.join(inputs_directory,"gasprice_jan2014.csv"), index_col=0) #index will be the hubname

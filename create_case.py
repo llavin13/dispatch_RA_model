@@ -18,7 +18,8 @@ import datetime
 
 #other scripts that are used
 import raw_data_imports
-import create_ordc
+import ordc_sandbox
+#import create_ordc
 import data_to_csvs
 
 #load user specified inputs for cases
@@ -90,13 +91,14 @@ for date in dates:
     
     #create an additional dynamic ORDC file, if desired
     if create_supp_ordc:
-        ordc_df = create_ordc.load_and_run_ordc(dir_str.INPUTS_DIRECTORY, dir_str.RESULTS_DIRECTORY,
-                                                month, hydro_cf, VOLL, lowcutLOLP, n_segments, dynamic_ORDC)
+        ordc_df = ordc_sandbox.load_and_run_ordc(dir_str.INPUTS_DIRECTORY, dir_str.RESULTS_DIRECTORY,
+                                                month, hydro_cf, VOLL, lowcutLOLP, n_segments, dynamic_ORDC,
+                                                date)
         ordc_df.to_csv(os.path.join(dir_str.RESULTS_DIRECTORY,"full_ordc.csv"), index=False)
     else:
         print('you have chosen *NOT* to create a supplemental ORDC, so the model will have *NO* \
               reserve requirements')
-        ordc_df = create_ordc.no_ordc(dir_str.INPUTS_DIRECTORY, dir_str.RESULTS_DIRECTORY,
+        ordc_df = ordc_sandbox.no_ordc(dir_str.INPUTS_DIRECTORY, dir_str.RESULTS_DIRECTORY,
                                       n_segments)
         ordc_df.to_csv(os.path.join(dir_str.RESULTS_DIRECTORY,"full_ordc.csv"), index=False)
         
