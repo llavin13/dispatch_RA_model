@@ -51,13 +51,12 @@ cwd = os.getcwd()
 ## CREATE LINKED SCENARIO OVER MULTIPLE DAYS ##
 #enter this as a list of tuples (probably can automate this / connect to case_inputs.py at some point)
 #scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),
-#                 ("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
+#                ("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
 #                 ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),
 #                 ("1.10.2014",True,"1.9.2014")] 
-scenario_list = [("1.8.2014",True,"1.7.2014"),
-                 ("1.9.2014",True,"1.8.2014"),
-                 ("1.10.2014",True,"1.9.2014")]
-#scenario_list = [("TOY",False,"")]
+#scenario_list = [("1.9.2014",True,"1.8.2014"),
+#                 ("1.10.2014",True,"1.9.2014")]
+scenario_list = [("TOY",False,"")]
 #scenario_list = [("10.19.2017",False,"")]
 #scenario_list = [("10.20.2017.nordc",True,"10.19.2017.nordc"),("10.21.2017.nordc",True,"10.20.2017.nordc"),
 #                 ("10.22.2017.nordc",True,"10.21.2017.nordc"),("10.23.2017.nordc",True,"10.22.2017.nordc"),

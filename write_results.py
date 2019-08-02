@@ -59,7 +59,7 @@ def export_results(instance, results, results_directory, debug_mode):
         
     #export zonal prices
     try:
-        export_zonal_price(instance, timepoints_set, zones_set, results_directory)
+        export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, results_directory)
     except Exception as err:
         msg = "ERROR exporting zonal prices! Check export_zonal_price()."
         handle_exception(msg, debug_mode)
@@ -174,17 +174,35 @@ def export_generator_segment_dispatch(instance, timepoints_set, generators_set, 
     df.to_csv(os.path.join(results_directory,"generator_segment_dispatch.csv"))
     
     
-def export_zonal_price(instance, timepoints_set, zones_set, results_directory):
+def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, results_directory):
     
     results_prices = []
+    results_spin_reserve_prices = []
+    results_penalty_factors = []
     index_name = []
     timepoints_list = []
     for z in zones_set:
         for t in timepoints_set:
             index_name.append(z)
             results_prices.append(format_2f(instance.dual[instance.LoadConstraint[t,z]]))
+            results_spin_reserve_prices.append(format_2f(-instance.dual[instance.TotalSpinUpReserveConstraint[t]]))
+            #reserves multiplied by -1 to report as positive lost opportunity cost of marginal reserve resource
             timepoints_list.append(t)
-    df = pd.DataFrame({'hour': timepoints_list, 'LMP':np.asarray(results_prices)},
+    for z in zones_set:
+        recorded_timepoints = []
+        for t in timepoints_set:
+            for s in ordc_segments_set:
+                if instance.MW[t,s]-instance.segmentreserves[t,s].value > 0.1:
+                    if t not in recorded_timepoints:
+                        results_penalty_factors.append(instance.price[t,s])
+                        recorded_timepoints.append(t)
+                elif s == max(ordc_segments_set):
+                    results_penalty_factors.append(0)
+                    recorded_timepoints.append(t)           
+    
+    df = pd.DataFrame({'hour': timepoints_list, 'LMP':np.asarray(results_prices), 
+                       'SynchReservePrice':np.asarray(results_spin_reserve_prices),
+                       'PenaltyFactor':np.asarray(results_penalty_factors)},
                        index=pd.Index(index_name))
     df.to_csv(os.path.join(results_directory,"zonal_prices.csv"))
     

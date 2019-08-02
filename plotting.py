@@ -180,8 +180,8 @@ def diagnostic_plots(scenario_results, dir_str):
     plt.show()
     
     #reserve dual
-    plt.plot(x, np.asarray(scenario_results[8]), color='black')
-    plt.title('Reserve Duals')
+    plt.plot(x, -np.asarray(scenario_results[8]), color='black')
+    plt.title('Negative Reserve Duals')
     plt.ylabel('Reserve Price ($/MW)')
     plt.xlabel('Hour')
     plt.show()
