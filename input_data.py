@@ -65,7 +65,9 @@ def scenario_inputs(inputs_directory):
     #this is effectively defunct and used only for loading the index
     data.load(filename=os.path.join(inputs_directory, "operating_reserve_segments.csv"),
               index=model_script.dispatch_model.SEGMENTS,
-              param=(model_script.dispatch_model.segmentMW,
+              param=(model_script.dispatch_model.synchsegmentMW,
+                     model_script.dispatch_model.nonsynchsegmentMW,
+                     model_script.dispatch_model.secondarysegmentMW,
                      model_script.dispatch_model.segmentprice)
               )          
               
@@ -75,7 +77,9 @@ def scenario_inputs(inputs_directory):
               )
     
     data.load(filename=os.path.join(inputs_directory, "full_ordc.csv"),
-              param=(model_script.dispatch_model.MW,
+              param=(model_script.dispatch_model.SynchMW,
+                     model_script.dispatch_model.NonSynchMW,
+                     model_script.dispatch_model.SecondaryMW,
                      model_script.dispatch_model.price)
               )    
 

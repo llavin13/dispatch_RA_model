@@ -177,7 +177,9 @@ def export_generator_segment_dispatch(instance, timepoints_set, generators_set, 
 def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, results_directory):
     
     results_prices = []
-    results_spin_reserve_prices = []
+    results_synch_reserve_prices = []
+    results_nonsynch_reserve_prices = []
+    results_secondary_reserve_prices = []
     results_penalty_factors = []
     index_name = []
     timepoints_list = []
@@ -185,14 +187,16 @@ def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, r
         for t in timepoints_set:
             index_name.append(z)
             results_prices.append(format_2f(instance.dual[instance.LoadConstraint[t,z]]))
-            results_spin_reserve_prices.append(format_2f(-instance.dual[instance.TotalSpinUpReserveConstraint[t]]))
+            results_synch_reserve_prices.append(format_2f(-instance.dual[instance.TotalSynchReserveConstraint[t]]))
+            results_nonsynch_reserve_prices.append(format_2f(-instance.dual[instance.TotalNonSynchReserveConstraint[t]]))
+            results_secondary_reserve_prices.append(format_2f(-instance.dual[instance.TotalSecondaryReserveConstraint[t]]))
             #reserves multiplied by -1 to report as positive lost opportunity cost of marginal reserve resource
             timepoints_list.append(t)
     for z in zones_set:
         recorded_timepoints = []
         for t in timepoints_set:
             for s in ordc_segments_set:
-                if instance.MW[t,s]-instance.segmentreserves[t,s].value > 0.1:
+                if instance.SynchMW[t,s]-instance.segmentreserves[t,s].value > 0.1:
                     if t not in recorded_timepoints:
                         results_penalty_factors.append(instance.price[t,s])
                         recorded_timepoints.append(t)
@@ -201,8 +205,10 @@ def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, r
                     recorded_timepoints.append(t)           
     
     df = pd.DataFrame({'hour': timepoints_list, 'LMP':np.asarray(results_prices), 
-                       'SynchReservePrice':np.asarray(results_spin_reserve_prices),
-                       'PenaltyFactor':np.asarray(results_penalty_factors)},
+                       'PrimarySynchReservePrice':np.asarray(results_synch_reserve_prices),
+                       'PrimaryNonSynchReservePrice':np.asarray(results_nonsynch_reserve_prices),
+                       'SecondaryReservePrice':np.asarray(results_secondary_reserve_prices),
+                       'PrimarySynchPenaltyFactor':np.asarray(results_penalty_factors)},
                        index=pd.Index(index_name))
     df.to_csv(os.path.join(results_directory,"zonal_prices.csv"))
     
@@ -232,7 +238,10 @@ def export_generator_commits_reserves(instance, timepoints_set, generators_set, 
     results_shuts = []
     results_hourson = []
     results_hoursoff = []
+    results_primarysynchreserves = []
+    results_primarynonsynchreserves = []
     results_allreserves = []
+    results_secondaryreserves = []
     index_name = []
     for g in generators_set:
         for t in timepoints_set:
@@ -252,25 +261,40 @@ def export_generator_commits_reserves(instance, timepoints_set, generators_set, 
             else:
                 results_hourson.append(results_hourson[-1]+instance.commitment[t,g].value)
                 results_hoursoff.append(results_hoursoff[-1]+(1-instance.commitment[t,g].value))
-                
-            results_allreserves.append(format_2f(instance.spinreserves[t,g].value + instance.nonspinreserves[t,g].value))
-    col_names = ['Gen_Index','timepoint','Committed','Started','Shut','TimeOn','TimeOff','Held as Reserves (MW)']
+            
+            results_primarysynchreserves.append(format_2f(instance.synchreserves[t,g].value))
+            results_primarynonsynchreserves.append(format_2f(instance.nonsynchreserves[t,g].value))
+            results_allreserves.append(format_2f(instance.synchreserves[t,g].value + instance.nonsynchreserves[t,g].value))
+            results_secondaryreserves.append(format_2f(instance.secondaryreserves[t,g].value))
+    
+    col_names = ['Gen_Index','timepoint','Committed','Started','Shut','TimeOn','TimeOff',
+                 'Total Held as Primary Synch Reserves (MW)', 'Total Held as Primary NonSynch Reserves (MW)',
+                 'Total Held as Primary Reserves (MW)', 'Total Held as Secondary Reserves (MW)']
     df = pd.DataFrame(data=np.column_stack((np.asarray(results_gens), np.asarray(results_time), np.asarray(results_commitment),
                                             np.asarray(results_starts), np.asarray(results_shuts),np.asarray(results_hourson),
-                                            np.asarray(results_hoursoff), np.asarray(results_allreserves))),
+                                            np.asarray(results_hoursoff),
+                                            np.asarray(results_primarysynchreserves), np.asarray(results_primarynonsynchreserves),
+                                            np.asarray(results_allreserves), np.asarray(results_secondaryreserves))),
                       columns=col_names,index=pd.Index(index_name))
     df.to_csv(os.path.join(results_directory,"generator_commits_reserves.csv"), index=False)
     
 def export_reserve_segment_commits(instance, timepoints_set, ordc_segments_set, results_directory):
     
-    results_segments = []
+    results_synch_segments = []
+    results_nonsynch_segments = []
+    results_secondary_segments = []
     index_name = []
     for s in ordc_segments_set:
         for t in timepoints_set:
             index_name.append(str(s)+","+str(t))
-            results_segments.append(format_2f(instance.segmentreserves[t,s].value))
-    col_names = ['MW on reserve segment']
-    df = pd.DataFrame(data=(np.asarray(results_segments)),columns=col_names,index=pd.Index(index_name))
+            results_synch_segments.append(format_2f(instance.segmentreserves[t,s].value))
+            results_nonsynch_segments.append(format_2f(instance.nonsynchsegmentreserves[t,s].value))
+            results_secondary_segments.append(format_2f(instance.secondarysegmentreserves[t,s].value))
+    col_names = ['MW on primary synch reserve segment', 'MW on primary nonsynch reserve segment',
+                 'MW on secondary reserve segment']
+    df = pd.DataFrame(data=np.column_stack((np.asarray(results_synch_segments), np.asarray(results_nonsynch_segments),
+                                            np.asarray(results_secondary_segments))),
+                      columns=col_names,index=pd.Index(index_name))
     df.to_csv(os.path.join(results_directory,"reserve_segment_commit.csv"))
     
 def export_VREs(instance, results_directory):

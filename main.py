@@ -229,13 +229,15 @@ def run_scenario(directory_structure, load_init):
     results_curtailment = []
     price_duals = []
     reserve_duals = []
-    results_spinreserves = []
+    results_synchreserves = []
     transmission_duals = []
     results_transmission_line_flow = []
+    results_nonsynchreserves = []
+    results_secondaryreserves = []
 
     for t in instance.TIMEPOINTS:
         tmps.append(instance.TIMEPOINTS[t])
-        reserve_duals.append(instance.dual[instance.TotalSpinUpReserveConstraint[t]])
+        reserve_duals.append(instance.dual[instance.TotalSynchReserveConstraint[t]])
         
         for line in instance.TRANSMISSION_LINE:
             transmission_duals.append(instance.dual[instance.TxFromConstraint[t,line]] +\
@@ -254,15 +256,17 @@ def run_scenario(directory_structure, load_init):
         for g in instance.GENERATORS:
             results_starts.append(instance.startup[t,g].value)
             results_shuts.append(instance.shutdown[t,g].value)
-            results_spinreserves.append(instance.spinreserves[t,g].value)
+            results_synchreserves.append(instance.synchreserves[t,g].value)
+            results_nonsynchreserves.append(instance.nonsynchreserves[t,g].value)
+            results_secondaryreserves.append(instance.secondaryreserves[t,g].value)
             
     zones = pd.read_csv(join(dir_str.INPUTS_DIRECTORY, 'zones.csv'))
     for z in zones['zone']:
         zone_stamp.append(z)
     
     return (results_dispatch, len(tmps), results_wind, results_solar, results_curtailment, results_starts,\
-            results_shuts, price_duals, reserve_duals, results_spinreserves, len(zone_stamp),\
-            transmission_duals,results_transmission_line_flow)
+            results_shuts, price_duals, reserve_duals, results_synchreserves, len(zone_stamp),\
+            transmission_duals, results_transmission_line_flow, results_nonsynchreserves, results_secondaryreserves)
 
 ### RUN MODEL ###
 count_case = 0

@@ -96,11 +96,15 @@ dispatch_model.rampshutdownlimit = Param(dispatch_model.GENERATORS, dispatch_mod
 
 #reserve segment-dependent params
 ### THESE ARE NO LONGER USED IN THE MODEL AS OF 4.14.19 ###
-dispatch_model.segmentMW = Param(dispatch_model.SEGMENTS, within=NonNegativeReals)
+dispatch_model.synchsegmentMW = Param(dispatch_model.SEGMENTS, within=NonNegativeReals)
+dispatch_model.nonsynchsegmentMW = Param(dispatch_model.SEGMENTS, within=NonNegativeReals)
+dispatch_model.secondarysegmentMW = Param(dispatch_model.SEGMENTS, within=NonNegativeReals)
 dispatch_model.segmentprice = Param(dispatch_model.SEGMENTS, within=NonNegativeReals)
 
 #reserve segment *and* timepoint dependent params
-dispatch_model.MW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
+dispatch_model.SynchMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
+dispatch_model.NonSynchMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
+dispatch_model.SecondaryMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
 dispatch_model.price = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
 
 #transmission line only depedent params
@@ -132,6 +136,15 @@ def hydro_resources_init(model):
 
 dispatch_model.HYDRO_GENERATORS = Set(within=dispatch_model.GENERATORS, initialize=hydro_resources_init)
 
+def quick_start_resources_init(model):
+    quick_start_resources = list()
+    for g in model.GENERATORS:
+        if model.cannonspin[g]==1:
+            quick_start_resources.append(g)
+    return quick_start_resources
+
+dispatch_model.QUICK_START_GENERATORS = Set(within=dispatch_model.GENERATORS, initialize=quick_start_resources_init)
+
 
 ###########################
 # ######## VARS ######### #
@@ -144,13 +157,22 @@ dispatch_model.segmentdispatch = Var(dispatch_model.TIMEPOINTS, dispatch_model.G
                                      dispatch_model.ZONES, dispatch_model.GENERATORSEGMENTS,
                                      within=NonNegativeReals, initialize=0)
 
-dispatch_model.spinreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS,
+dispatch_model.synchreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS,
                                   within = NonNegativeReals, initialize=0)
 
-dispatch_model.nonspinreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS,
+dispatch_model.nonsynchreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS,
+                                  within = NonNegativeReals, initialize=0)
+
+dispatch_model.secondaryreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS,
                                   within = NonNegativeReals, initialize=0)
 
 dispatch_model.segmentreserves =  Var(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS,
+                                      within = NonNegativeReals, initialize=0)
+
+dispatch_model.nonsynchsegmentreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS,
+                                      within = NonNegativeReals, initialize=0)
+
+dispatch_model.secondarysegmentreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS,
                                       within = NonNegativeReals, initialize=0)
 
 dispatch_model.windgen = Var(dispatch_model.TIMEPOINTS, dispatch_model.ZONES,
@@ -199,7 +221,7 @@ dispatch_model.CurtailmentConstraint = Constraint(dispatch_model.TIMEPOINTS, dis
 ## HYDRO ##
 
 def TotalHydroRule(model, z):
-    return (sum(sum(model.dispatch[t,h,z] for h in model.HYDRO_GENERATORS) for t in model.TIMEPOINTS) + sum(sum(model.spinreserves[t,h] for h in model.HYDRO_GENERATORS) for t in model.TIMEPOINTS) == model.totalhydro[z])
+    return (sum(sum(model.dispatch[t,h,z] for h in model.HYDRO_GENERATORS) for t in model.TIMEPOINTS) + sum(sum(model.synchreserves[t,h] for h in model.HYDRO_GENERATORS) for t in model.TIMEPOINTS) == model.totalhydro[z])
 dispatch_model.TotalHydroConstraint = Constraint(dispatch_model.ZONES, rule=TotalHydroRule)
 
 def HydroMaxRule(model, t, z):
@@ -387,39 +409,56 @@ dispatch_model.MinDownConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatc
 
 ## HOLD SUFFICIENT RESERVES ##
 
-## SPIN RESERVES - GENERATOR ##
+## PRIMARY SYNCHRONIZED RESERVES - HELD BY INDIVIDUAL GENERATOR ##
 
-#caps the amount of spinning reserve a generator can provide as delta between its max and current power output
+#caps the amount of synchronized reserve a generator can provide as delta between its max and current power output
 #and provides only if generator is eligible to provide spinning reserve
 def GenSpinUpReserveRule(model,t,g):
-    return sum((model.capacity[g,z]*model.commitment[t,g]*model.scheduledavailable[t,g] - model.dispatch[t,g,z]) for z in model.ZONES)*model.canspin[g] >= model.spinreserves[t,g]
+    return sum((model.capacity[g,z]*model.commitment[t,g]*model.scheduledavailable[t,g] - model.dispatch[t,g,z]) for z in model.ZONES)*model.canspin[g] >= model.synchreserves[t,g]
 dispatch_model.GenSpinUpReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, rule=GenSpinUpReserveRule)
 
-#caps amount of reserve a generator can provide as delta between its current output and max ramping capability 
-#implemented to be within the timepoint (hourly for PJM) right now, but in practice system operators often use shorter timescales
-
+#caps amount of synchronized reserve a generator can provide as delta between its current output and max ramping capability 
+#implemented to be within the timepoint (hourly for right now), but in practice system operators often use shorter timescales
+#for example, PJM uses 10 minute (primary) and 30 minute (secondary) reserve horizon
 def GenSpinUpReserveRampRule(model,t,g,z):
-    return model.ramp[g,z] >= model.spinreserves[t,g]
+    return model.ramp[g,z] >= model.synchreserves[t,g]
 dispatch_model.GenSpinUpReserveRampConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, dispatch_model.ZONES, rule=GenSpinUpReserveRampRule)
 
-## NON-SPIN RESERVES - GENERATOR ##
+## PRIMARY NON-SYNCHRONIZED RESERVES - HELD BY INDIVIDUAL GENERATOR ##
 
-#caps generator level non-spin as delta between current output and pmin, and can provide only if generator is offline
-#also can provide only if generator is eligible to provide non-spin
-def GenNonSpinUpReserveRule(model,t,g):
-    return sum((model.capacity[g,z]*model.pmin[g]*(1-model.commitment[t,g])*(1-model.shutdown[t,g])*model.scheduledavailable[t,g]) for z in model.ZONES)*model.cannonspin[g] >= model.nonspinreserves[t,g]
-#dispatch_model.GenNonSpinUpReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, rule=GenNonSpinUpReserveRule)
-    
-
-## TOTAL RESERVES ##
+#caps generator level non-synchronized reserve as delta between current output and pmin
+#can provide only if generator is offline
+#also can provide only if generator is eligible to provide non-synch reserve (i.e., is quick-start capacity)
+def GenNonSynchReserveRule(model,t,g):
+    return sum((model.capacity[g,z]*model.pmin[g]*(1-model.commitment[t,g])*model.scheduledavailable[t,g]) for z in model.ZONES)*model.cannonspin[g] >= model.nonsynchreserves[t,g]
+dispatch_model.GenNonSynchReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, rule=GenNonSynchReserveRule)
 
 
+## SECONDARY RESERVES - HELD BY INVIDIVUAL GENERATOR ##   
+
+#secondary reserves held by individual generator must be less than held primary reserves times temporal multiplier
+
+def SecondaryReserveRule(model,t,g):
+    return 3*(model.synchreserves[t,g]+model.nonsynchreserves[t,g]) >= model.secondaryreserves[t,g]
+dispatch_model.SecondaryReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, rule=SecondaryReserveRule)
+
+#secondary reserves must still, however, be less than pmax - generator set point 
+
+def SecondaryReservePmaxRule(model,t,g):
+    return sum((model.capacity[g,z] - model.dispatch[t,g,z]) for z in model.ZONES) >= model.secondaryreserves[t,g]
+dispatch_model.SecondaryReservePmaxConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, rule=SecondaryReservePmaxRule)
+
+## TOTAL PRIMARY SYNCHRONIZED RESERVES HELD ##
 
 #these reserve constraints record the level of held reserves on each segment of the ORDC
-def TotalSpinUpReserveRule(model,t):
-    return (sum(model.spinreserves[t,g] for g in model.GENERATORS) >= sum(model.segmentreserves[t,s] for s in model.SEGMENTS))
-dispatch_model.TotalSpinUpReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=TotalSpinUpReserveRule)
+def TotalSynchReserveRule(model,t):
+    return (sum(model.synchreserves[t,g] for g in model.GENERATORS) >= sum(model.segmentreserves[t,s] for s in model.SEGMENTS))
+dispatch_model.TotalSynchReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=TotalSynchReserveRule)
 
+#defunct hard constraint on reserves
+#def SpinUpReserveHardRule(model,t):
+#    return sum(model.spinreserves[t,g] for g in model.GENERATORS) >= 9000
+#dispatch_model.SpinUpReserveHardConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=SpinUpReserveHardRule)
 #binds the ratio of non-spin to spin reserves
 #originally set to be 50% like in https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=6609097
 #def SpintoNonSpinRatioRule(model,t):
@@ -427,8 +466,28 @@ dispatch_model.TotalSpinUpReserveConstraint = Constraint(dispatch_model.TIMEPOIN
 #dispatch_model.SpintoNonSpinRatioConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=SpintoNonSpinRatioRule)
 
 def SegmentReserveRule(model,t,s):
-    return model.MW[t,s] >= model.segmentreserves[t,s]
+    return model.SynchMW[t,s] >= model.segmentreserves[t,s]
 dispatch_model.SegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=SegmentReserveRule)
+
+## TOTAL PRIMARY NON-SYNCH RESERVES HELD ##
+
+def TotalNonSynchReserveRule(model,t):
+    return (sum((model.synchreserves[t,g] + model.nonsynchreserves[t,g]) for g in model.GENERATORS) >= sum(model.nonsynchsegmentreserves[t,s] for s in model.SEGMENTS))
+dispatch_model.TotalNonSynchReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=TotalNonSynchReserveRule)
+
+def NonSynchSegmentReserveRule(model,t,s):
+    return model.NonSynchMW[t,s] >= model.nonsynchsegmentreserves[t,s]
+dispatch_model.NonSynchSegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=NonSynchSegmentReserveRule)
+
+## TOTAL SECONDARY RESERVES HELD ##
+
+def TotalSecondaryReserveRule(model,t):
+    return (sum(model.secondaryreserves[t,g] for g in model.GENERATORS) >= sum(model.secondarysegmentreserves[t,s] for s in model.SEGMENTS))
+dispatch_model.TotalSecondaryReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=TotalSecondaryReserveRule)
+
+def SecondarySegmentReserveRule(model,t,s):
+    return model.SecondaryMW[t,s] >= model.secondarysegmentreserves[t,s]
+dispatch_model.SecondarySegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=SecondarySegmentReserveRule)
 
 ###########################
 # ###### OBJECTIVE ###### #
@@ -439,15 +498,18 @@ def objective_rule(model):
     return sum(sum(sum(sum(model.segmentdispatch[t,g,z,gs] for z in model.ZONES) for t in model.TIMEPOINTS)*model.generatormarginalcost[g,gs] for g in model.GENERATORS) for gs in model.GENERATORSEGMENTS)+\
            sum(sum(model.commitment[t,g] for t in model.TIMEPOINTS)*model.noloadcost[g] for g in model.GENERATORS)+\
            sum(sum(model.startup[t,g] for t in model.TIMEPOINTS)*model.startcost[g] for g in model.GENERATORS)-\
-           sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
+           sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+           sum(sum(model.price[t,s]*model.nonsynchsegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+           sum(sum(model.price[t,s]*model.secondarysegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
            sum(sum(model.hurdle_rate[t, line]*model.transmit_power_MW[t, line] for line in model.TRANSMISSION_LINE) for t in model.TIMEPOINTS)
+    #sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
     #return(sum(sum(sum(model.dispatch[t,g,z] for z in model.ZONES) for t in model.TIMEPOINTS)*model.fuelcost[g] for g in model.GENERATORS) +\
     #DESCRIPTION OF OBJECTIVE
     #(1) dispatch cost
     #(2) no load cost of committed gen
     #(3) start up costs when generators brought online
-    #(4) utility of reserve demand
-    #(5) hurdle rates on use of Tx lines
+    #(4)-(6) utility of reserve demand
+    #(7) hurdle rates on use of Tx lines
 dispatch_model.TotalCost = Objective(rule=objective_rule, sense=minimize)
 
 end_time = time.time() - start_time

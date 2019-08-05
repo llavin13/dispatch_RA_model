@@ -29,7 +29,9 @@ def diagnostic_plots(scenario_results, dir_str):
     scenario_results_np = np.reshape(scenario_results[0], (int(scenario_results[1]), int(len(scenario_results[0])/scenario_results[1])))
     start_results_np = np.reshape(scenario_results[5], (int(scenario_results[1]), int(len(scenario_results[5])/scenario_results[1])))
     shut_results_np = np.reshape(scenario_results[6], (int(scenario_results[1]), int(len(scenario_results[6])/scenario_results[1])))
-    spin_results_np = np.reshape(scenario_results[9], (int(scenario_results[1]), int(len(scenario_results[9])/scenario_results[1])))
+    synch_results_np = np.reshape(scenario_results[9], (int(scenario_results[1]), int(len(scenario_results[9])/scenario_results[1])))
+    nonsynch_results_np = np.reshape(scenario_results[13], (int(scenario_results[1]), int(len(scenario_results[13])/scenario_results[1])))
+    secondary_results_np = np.reshape(scenario_results[14], (int(scenario_results[1]), int(len(scenario_results[14])/scenario_results[1])))
     
     wind_results_np = np.reshape(scenario_results[2], (int(scenario_results[1]), int(len(scenario_results[2])/scenario_results[1])))
     solar_results_np = np.reshape(scenario_results[3], (int(scenario_results[1]), int(len(scenario_results[3])/scenario_results[1])))
@@ -49,7 +51,9 @@ def diagnostic_plots(scenario_results, dir_str):
     y = []
     start = []
     shut = []
-    spinreserves = []
+    synchreserves = []
+    nonsynchreserves = []
+    secondaryreserves = []
     wind_power = []
     solar_power = []
     curtail_power = []
@@ -59,7 +63,9 @@ def diagnostic_plots(scenario_results, dir_str):
         
         start.append(np.dot(start_results_np,np.array(gen_type)))
         shut.append(np.dot(shut_results_np,np.array(gen_type)))
-        spinreserves.append(np.dot(spin_results_np,np.array(gen_type)))        
+        synchreserves.append(np.dot(synch_results_np,np.array(gen_type)))
+        nonsynchreserves.append(np.dot(nonsynch_results_np,np.array(gen_type)))  
+        secondaryreserves.append(np.dot(secondary_results_np,np.array(gen_type)))
     
     for z in range(len(zones['zone'])):
         wind_power.append(wind_results_np[:,z])
@@ -128,7 +134,7 @@ def diagnostic_plots(scenario_results, dir_str):
     plt.legend()
     plt.show()
     
-    #and for the held spin reserves by generator type
+    #and for the held synch reserves by generator type
     plt.plot([],[],color='b', label='Hydro', linewidth=5)
     plt.plot([],[],color='m', label='Nuclear', linewidth=5)
     plt.plot([],[],color='k', label='Coal', linewidth=5)
@@ -136,9 +142,39 @@ def diagnostic_plots(scenario_results, dir_str):
     plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
     plt.plot([],[],color='g', label='Oil', linewidth=5)
     
-    plt.stackplot(x,spinreserves[4],spinreserves[5],spinreserves[2],spinreserves[0],spinreserves[1],spinreserves[3],
+    plt.stackplot(x,synchreserves[4],synchreserves[5],synchreserves[2],synchreserves[0],synchreserves[1],synchreserves[3],
                   colors=['b','m','k','orange','sienna','g'])
-    plt.ylabel('Held Spin Reserves (MW)')
+    plt.ylabel('Held Synch Reserves (MW)')
+    plt.xlabel('Hour')
+    plt.legend()
+    plt.show()
+    
+    #and for the held nonsynch reserves by generator type
+    plt.plot([],[],color='b', label='Hydro', linewidth=5)
+    plt.plot([],[],color='m', label='Nuclear', linewidth=5)
+    plt.plot([],[],color='k', label='Coal', linewidth=5)
+    plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
+    plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
+    plt.plot([],[],color='g', label='Oil', linewidth=5)
+    
+    plt.stackplot(x,nonsynchreserves[4],nonsynchreserves[5],nonsynchreserves[2],nonsynchreserves[0],nonsynchreserves[1],nonsynchreserves[3],
+                  colors=['b','m','k','orange','sienna','g'])
+    plt.ylabel('Held NonSynch Reserves (MW)')
+    plt.xlabel('Hour')
+    plt.legend()
+    plt.show()
+    
+    #and for the held secondary reserves by generator type
+    plt.plot([],[],color='b', label='Hydro', linewidth=5)
+    plt.plot([],[],color='m', label='Nuclear', linewidth=5)
+    plt.plot([],[],color='k', label='Coal', linewidth=5)
+    plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
+    plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
+    plt.plot([],[],color='g', label='Oil', linewidth=5)
+    
+    plt.stackplot(x,secondaryreserves[4],secondaryreserves[5],secondaryreserves[2],secondaryreserves[0],secondaryreserves[1],secondaryreserves[3],
+                  colors=['b','m','k','orange','sienna','g'])
+    plt.ylabel('Held Secondary Reserves (MW)')
     plt.xlabel('Hour')
     plt.legend()
     plt.show()
@@ -179,9 +215,9 @@ def diagnostic_plots(scenario_results, dir_str):
     plt.legend(tx_label, loc='upper left')
     plt.show()
     
-    #reserve dual
+    #synch reserve duals
     plt.plot(x, -np.asarray(scenario_results[8]), color='black')
-    plt.title('Negative Reserve Duals')
-    plt.ylabel('Reserve Price ($/MW)')
+    plt.title('Negative Synchronized Primary Reserve Duals')
+    plt.ylabel('Synchronized Primary Reserve Price ($/MW)')
     plt.xlabel('Hour')
     plt.show()
