@@ -62,6 +62,9 @@ dispatch_model.ramphydro = Param(dispatch_model.TIMEPOINTS, dispatch_model.ZONES
 
 #timepoint-dependent params
 dispatch_model.temperature = Param(dispatch_model.TIMEPOINTS, within=Reals)
+dispatch_model.primaryreservescalar = Param(dispatch_model.TIMEPOINTS, within=NonNegativeReals)
+dispatch_model.secondaryreservescalar = Param(dispatch_model.TIMEPOINTS, within=NonNegativeReals)
+dispatch_model.reservescalarratio = Param(dispatch_model.TIMEPOINTS, within=NonNegativeReals)
 
 #zone-dependent params
 dispatch_model.windcap = Param(dispatch_model.ZONES, within=NonNegativeReals)
@@ -421,7 +424,7 @@ dispatch_model.GenSpinUpReserveConstraint = Constraint(dispatch_model.TIMEPOINTS
 #implemented to be within the timepoint (hourly for right now), but in practice system operators often use shorter timescales
 #for example, PJM uses 10 minute (primary) and 30 minute (secondary) reserve horizon
 def GenSpinUpReserveRampRule(model,t,g,z):
-    return model.ramp[g,z] >= model.synchreserves[t,g]
+    return model.ramp[g,z]*model.primaryreservescalar[t] >= model.synchreserves[t,g]
 dispatch_model.GenSpinUpReserveRampConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, dispatch_model.ZONES, rule=GenSpinUpReserveRampRule)
 
 ## PRIMARY NON-SYNCHRONIZED RESERVES - HELD BY INDIVIDUAL GENERATOR ##
@@ -429,6 +432,7 @@ dispatch_model.GenSpinUpReserveRampConstraint = Constraint(dispatch_model.TIMEPO
 #caps generator level non-synchronized reserve as delta between current output and pmin
 #can provide only if generator is offline
 #also can provide only if generator is eligible to provide non-synch reserve (i.e., is quick-start capacity)
+#as written this assumes a generator can reach its pmin within the primary time window (currently, 10 minutes for PJM)
 def GenNonSynchReserveRule(model,t,g):
     return sum((model.capacity[g,z]*model.pmin[g]*(1-model.commitment[t,g])*model.scheduledavailable[t,g]) for z in model.ZONES)*model.cannonspin[g] >= model.nonsynchreserves[t,g]
 dispatch_model.GenNonSynchReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, rule=GenNonSynchReserveRule)
@@ -437,9 +441,10 @@ dispatch_model.GenNonSynchReserveConstraint = Constraint(dispatch_model.TIMEPOIN
 ## SECONDARY RESERVES - HELD BY INVIDIVUAL GENERATOR ##   
 
 #secondary reserves held by individual generator must be less than held primary reserves times temporal multiplier
+#temporal multiplier is ratio of how much longer time window is for secondary vs. primary reserves (30 mins v. 10 mins in PJM)
 
 def SecondaryReserveRule(model,t,g):
-    return 3*(model.synchreserves[t,g]+model.nonsynchreserves[t,g]) >= model.secondaryreserves[t,g]
+    return model.reservescalarratio[t]*(model.synchreserves[t,g]+model.nonsynchreserves[t,g]) >= model.secondaryreserves[t,g]
 dispatch_model.SecondaryReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, rule=SecondaryReserveRule)
 
 #secondary reserves must still, however, be less than pmax - generator set point 

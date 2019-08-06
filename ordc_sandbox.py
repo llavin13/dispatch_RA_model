@@ -22,8 +22,9 @@ start_time = time.time() #record start time so can know how long this version of
 def no_ordc(raw_input_dir, case_dir,n_segments):
     '''
     this gets called and creates a ORDC timepoint file with *NO* (=0) price for all segements
-    so effectively no value for reserves. This is meant to pseudo-imitate previous PJM practice
-    though this could easily be updated to just create any "current" type of heuristic PJM ORDC
+    so effectively no value for reserves. 
+    
+    as of 8/5/2019 this is updated to create all 3 types of reserve products with no prices
     '''
     print('running creation of ORDC, but will have 0 prices')
     
@@ -39,20 +40,86 @@ def no_ordc(raw_input_dir, case_dir,n_segments):
             full_timepoint_list.append(t)
             full_segment_list.append(s)
     
-    full_MW_list = [100]*len(full_segment_list)
+    segment_dummy = 100
+    full_PrimarySynchMW_list = [segment_dummy]*len(full_segment_list)
+    full_PrimaryNonSynchMW_list = [1.5*segment_dummy]*len(full_segment_list)
+    full_SecondaryMW_list = [3.*segment_dummy]*len(full_segment_list)
     full_price_list = [0]*len(full_segment_list)
     
     
     segment_df = pd.DataFrame({'timepoint':full_timepoint_list,
               'segments':full_segment_list,
-              'MW':full_MW_list,
+              'SynchMW':full_PrimarySynchMW_list,
+              'NonSynchMW':full_PrimaryNonSynchMW_list,
+              'SecondaryMW':full_SecondaryMW_list,
+              'Price':full_price_list})
+        
+    return segment_df  
+
+def PJM_reserves(raw_input_dir, case_dir,
+                 n_segments, lfe, FOR_fe, reserve_short_penalty):
+    '''
+    This is meant to pseudo-imitate previous PJM practice (approx 2012-2019 practice)
+    This means for DA cases, only secondary reserves are required
+    And though techincally they weren't penalized for lack of holding reserves in DA (just RT),
+    there was a $850/MW penalty in RT, so I'll implement that for the DA run too
+    note this could easily be updated to just create any "current" type of heuristic PJM reserve requirements
+    '''
+    
+    #load the load data, so it can be scaled by forecast errors to get reserve requirements
+    load_df = pd.read_csv(os.path.join(case_dir,"timepoints_zonal.csv"))
+    
+    #create hourly load
+    hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
+    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
+    
+    da_forecast_error = lfe+FOR_fe #as decimal
+    
+    #multiply forecast error by hourly load to get reserve requirement, as appears to have been practice
+    #really this should take into account the probability of being short, but it doesn't appear historically that's what PJM did
+    hourly_loads['da_reserve_requirement'] = hourly_loads.gross_load*da_forecast_error
+    reserve_requirement_np = hourly_loads["da_reserve_requirement"].values #will give the np array
+    
+    #now create the lists for output
+    timepoint_list = list(load_df.timepoint.unique())
+    segment_list = list(range(1,n_segments+1))
+    
+    full_timepoint_list = []
+    full_segment_list = []
+    full_PrimarySynchMW_list = []
+    full_PrimaryNonSynchMW_list = []
+    full_SecondaryMW_list = []
+    full_price_list = []
+    
+    for t in timepoint_list:
+        for s in segment_list:
+            full_timepoint_list.append(t)
+            full_segment_list.append(s)
+            
+            if  s==1:
+                full_PrimarySynchMW_list.append(1500)
+                full_PrimaryNonSynchMW_list.append(1500)
+                full_SecondaryMW_list.append(reserve_requirement_np[t-1]) #has to be offset by 1 because Python indexes from 0
+                full_price_list.append(reserve_short_penalty)
+            else:
+                full_SecondaryMW_list.append(0)
+                full_price_list.append(0)
+                full_PrimarySynchMW_list.append(0) #0 for now but note ~1.5 GW must be held as synch in RT
+                full_PrimaryNonSynchMW_list.append(0)
+                
+    segment_df = pd.DataFrame({'timepoint':full_timepoint_list,
+              'segments':full_segment_list,
+              'SynchMW':full_PrimarySynchMW_list,
+              'NonSynchMW':full_PrimaryNonSynchMW_list,
+              'SecondaryMW':full_SecondaryMW_list,
               'Price':full_price_list})
         
     return segment_df  
 
 
 def load_and_run_ordc(raw_input_dir, case_dir,
-                      month, hydro_cf, VOLL, lowcutLOLP, n_segments, dynamic_ORDC, datestr): #this should be run from the main script, if desired, with appropriate inputs
+                      month, hydro_cf, VOLL, lowcutLOLP, n_segments, dynamic_ORDC,
+                      datestr, primary_reserve_scalar, secondary_reserve_scalar): #this should be run from the main script, if desired, with appropriate inputs
     print('running creation of new ORDC for ' + datestr)
     print('case folder is for creating ORDC is' + case_dir)
     #things to eventually pass
@@ -90,7 +157,7 @@ def load_and_run_ordc(raw_input_dir, case_dir,
                        month, hydro_cf, VOLL, lowcutLOLP, n_segments, fixed_forced_out_df, 
                        dynamic_ORDC, scheduled_outage_df, zonal_inputs,
                        init_avail_df, prob_fail_df, prob_recover_df, generator_level_outage_magnitude_df,unit_type_outage_magnitude_df,
-                       datestr)
+                       datestr, primary_reserve_scalar, secondary_reserve_scalar)
 
 
 #this is basically just a test script for getting the ORDC formulation to work
@@ -98,7 +165,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
                 month, hydro_cf, VOLL, lowcutLOLP, n_segments, fixed_forced_out_df, 
                 dynamic_ORDC, scheduled_outage_df, zonal_inputs,
                 init_avail_df, prob_fail_df, prob_recover_df, generator_level_outage_magnitude_df,unit_type_outage_magnitude_df,
-                datestr):
+                datestr, primary_reserve_scalar, secondary_reserve_scalar):
     
     #check loading of new frames
     #print(init_avail_df)
@@ -264,7 +331,9 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
 
     #voll = 3500 #probably want to input/change this at some point but OK for now
     store_lolp =[]
-    store_segment = []
+    #store_primarysynch_segment = []
+    store_primarynonsynch_segment = []
+    store_secondary_segment = []
     store_timepoint = []
     for t in list(hourly_stack_wtemp.timepoint.unique()):
     #for t in range(1,2):                
@@ -294,18 +363,23 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
                 cumulative_lolp = max(_np.cumsum(copt_table[:(cutoff_index+1),1]))
                 #store lolp*voll
                 store_lolp.append(cumulative_lolp*VOLL)
-                #create ordc segment
-                store_segment.append(seg_length)
+                #create ordc segments
+                #store_primarysynch_segment.append() #yikes
+                store_primarynonsynch_segment.append(seg_length*primary_reserve_scalar) #scaled by fraction of hour for now, though not exact method
+                store_secondary_segment.append(seg_length*secondary_reserve_scalar)
                 #store timepoint
                 store_timepoint.append(t)
     
+    #note that synchMW will always be 1500, presumed based on largest contingency and so not dynamic
     segment_df = pd.DataFrame({'timepoint':store_timepoint,
               'segments':list(range(1,n_segments+1))*int(max(hourly_stack_wtemp.timepoint.unique())),
-              'MW':store_segment,
+              'SynchMW': list([1500]+[0]*(n_segments-1))*int(max(hourly_stack_wtemp.timepoint.unique())),
+              'NonSynchMW':store_primarynonsynch_segment,
+              'SecondaryMW':store_secondary_segment,
               'Price':store_lolp})
     #segment_df =  pd.DataFrame({'timepoint':store_timepoint,
     #          'segments':list(range(1,n_segments+1))*int(1),
-    #          'MW':store_segment,
+    #          'MW':store_secondary_segment,
     #          'Price':store_lolp})
         
     return segment_df
@@ -388,12 +462,13 @@ def dist_of_zeros(mini, maxi):
     
 def makegendist(capacity, FOR, outagedist):
     
-    if capacity<.5:
+    if capacity<1.: #changed this from 0.5 to 1. to solve some rounding errors with low capacity units
         return _np.array([1.]) #simplified for low capacity units
 
     dist = outage_dist(capacity, FOR, outagedist)
     dist = _np.hstack((_np.zeros(int(min(dist[:,0]))), dist[:,1]))
     
+    #print(capacity, round(sum(dist),6))
     assert round(sum(dist),6)==1. #check that distribution still makes FORs sum to 1
 
     return dist

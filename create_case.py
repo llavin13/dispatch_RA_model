@@ -87,17 +87,23 @@ for date in dates:
     data = raw_data_imports.load_data(os.path.join(dir_str.INPUTS_DIRECTORY), os.path.join(dir_str.SCENARIO_INPUTS_DIRECTORY), date)
     
     #run and create the main set of csvs
-    data_to_csvs.write_data(data, dir_str.RESULTS_DIRECTORY, make_init, dir_str.SCENARIO_INPUTS_DIRECTORY, date, os.path.join(dir_str.INPUTS_DIRECTORY))
+    data_to_csvs.write_data(data, dir_str.RESULTS_DIRECTORY, make_init, dir_str.SCENARIO_INPUTS_DIRECTORY, date, 
+                            os.path.join(dir_str.INPUTS_DIRECTORY),primary_reserve_scalar, secondary_reserve_scalar)
     
     #create an additional dynamic ORDC file, if desired
     if create_supp_ordc:
         ordc_df = ordc_sandbox.load_and_run_ordc(dir_str.INPUTS_DIRECTORY, dir_str.RESULTS_DIRECTORY,
                                                 month, hydro_cf, VOLL, lowcutLOLP, n_segments, dynamic_ORDC,
-                                                date)
+                                                date, primary_reserve_scalar, secondary_reserve_scalar)
+        ordc_df.to_csv(os.path.join(dir_str.RESULTS_DIRECTORY,"full_ordc.csv"), index=False)
+    elif PJM_reserve_heuristic:
+        print('you have chosen PJM heuristic reserve requirements (will be based on inputs)')
+        ordc_df = ordc_sandbox.PJM_reserves(dir_str.INPUTS_DIRECTORY, dir_str.RESULTS_DIRECTORY,
+                                      n_segments, lfe, FOR_fe, contingency)
         ordc_df.to_csv(os.path.join(dir_str.RESULTS_DIRECTORY,"full_ordc.csv"), index=False)
     else:
-        print('you have chosen *NOT* to create a supplemental ORDC, so the model will have *NO* \
-              reserve requirements')
+        print('you have chosen a heuristic ORDC')
+        print('you have chosen 0 reserves, so *NO* reserve requirements at all')
         ordc_df = ordc_sandbox.no_ordc(dir_str.INPUTS_DIRECTORY, dir_str.RESULTS_DIRECTORY,
                                       n_segments)
         ordc_df.to_csv(os.path.join(dir_str.RESULTS_DIRECTORY,"full_ordc.csv"), index=False)

@@ -73,7 +73,10 @@ def scenario_inputs(inputs_directory):
               
     data.load(filename=os.path.join(inputs_directory, "timepoints_index.csv"),
               index=model_script.dispatch_model.TIMEPOINTS,
-              param=(model_script.dispatch_model.temperature)
+              param=(model_script.dispatch_model.temperature,
+                     model_script.dispatch_model.primaryreservescalar,
+                     model_script.dispatch_model.secondaryreservescalar,
+                     model_script.dispatch_model.reservescalarratio)
               )
     
     data.load(filename=os.path.join(inputs_directory, "full_ordc.csv"),

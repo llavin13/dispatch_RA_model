@@ -359,15 +359,22 @@ def create_operating_reserve_curve(n_segments, price_cap):
     quantity and price are dummy inputs for now
     '''
     segment_list = []
-    segment_quantity = []
+    primary_synch_segment_quantity = []
+    primary_nonsynch_segment_quantity = []
+    secondary_segment_quantity = []
     segment_price = []
+    segment_dummy = 100 #made up for now
     for s in range(1,n_segments+1):
         segment_list.append(s)
-        segment_quantity.append(100) #made up for now
+        primary_synch_segment_quantity.append(segment_dummy)
+        primary_nonsynch_segment_quantity.append(1.5*segment_dummy)
+        secondary_segment_quantity.append(3.*segment_dummy)
         segment_price.append(price_cap/(s**2)) #made up for now
     df = pd.DataFrame(
     {'segments': segment_list,
-     'MW': segment_quantity,
+     'SynchMW': primary_synch_segment_quantity,
+     'NonSynchMW': primary_nonsynch_segment_quantity,
+     'SecondaryMW': secondary_segment_quantity,
      'Price': segment_price
     })
     return df
@@ -375,7 +382,8 @@ def create_operating_reserve_curve(n_segments, price_cap):
 
 ## DUMP TO OUTPUT FILES ##
 
-def write_data(data, results_directory, init, scenario_inputs_directory, date, inputs_directory):
+def write_data(data, results_directory, init, scenario_inputs_directory, date, inputs_directory,
+               input_primary_reserve_scalar, input_secondary_reserve_scalar):
     print('writing results to output files...')
     loadMW = data[3]
     
@@ -518,6 +526,10 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
     
     temperatures_short = temperatures.iloc[:,0:2] #grabs first two columns
     temperatures_short = temperatures_short.rename(columns={temperatures_short.columns[1]: "temperature" })
+    #hourly_loads['ones'] = len(hourly_loads.index)*[1]
+    temperatures_short['primaryreservescalar'] = len(temperatures_short.index)*[input_primary_reserve_scalar]
+    temperatures_short['secondaryreservescalar'] = len(temperatures_short.index)*[input_secondary_reserve_scalar]
+    temperatures_short['reservescalarratio'] = len(temperatures_short.index)*[input_secondary_reserve_scalar/input_primary_reserve_scalar]
     temperatures_short.to_csv(os.path.join(results_directory,"timepoints_index.csv"),index=False)
     
     if not data[0].value[5]:
