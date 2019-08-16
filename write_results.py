@@ -204,12 +204,16 @@ def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, r
                     results_penalty_factors.append(0)
                     recorded_timepoints.append(t)           
     
-    df = pd.DataFrame({'hour': timepoints_list, 'LMP':np.asarray(results_prices), 
-                       'PrimarySynchReservePrice':np.asarray(results_synch_reserve_prices),
-                       'PrimaryNonSynchReservePrice':np.asarray(results_nonsynch_reserve_prices),
-                       'SecondaryReservePrice':np.asarray(results_secondary_reserve_prices),
-                       'PrimarySynchPenaltyFactor':np.asarray(results_penalty_factors)},
+    col_names = ['hour','LMP','PrimarySynchReservePrice','PrimaryNonSynchReservePrice',
+                 'SecondaryReservePrice','PrimarySynchPenaltyFactor']
+    df = pd.DataFrame(data=np.column_stack((np.asarray(timepoints_list), np.asarray(results_prices), 
+                       np.asarray(results_synch_reserve_prices),
+                       np.asarray(results_nonsynch_reserve_prices),
+                       np.asarray(results_secondary_reserve_prices),
+                       np.asarray(results_penalty_factors[0:len(timepoints_list)]))),
+                       columns=col_names,
                        index=pd.Index(index_name))
+    
     df.to_csv(os.path.join(results_directory,"zonal_prices.csv"))
     
 def export_lines(instance, timepoints_set, transmission_lines_set, results_directory):
