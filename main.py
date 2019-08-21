@@ -50,13 +50,15 @@ cwd = os.getcwd()
 
 ## CREATE LINKED SCENARIO OVER MULTIPLE DAYS ##
 #enter this as a list of tuples (probably can automate this / connect to case_inputs.py at some point)
-scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),
-                ("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
-                 ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),
-                 ("1.10.2014",True,"1.9.2014")] 
-#
+#scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),
+# scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),
+#                 ("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
+#                 ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),
+#                 ("1.10.2014",True,"1.9.2014")] 
+#scenario_list = [("1.5.2014",True,"1.4.2014")]
 #scenario_list = [("TOY",False,"")]
-#21qazscenario_list = [("1.4.2014",False,"")]
+scenario_list = [("10.19.2017",False,"")]
+#scenario_list = [("1.7.2014",False,"")]
 #scenario_list = [("10.19.2017",False,"")]
 #scenario_list = [("10.20.2017.nordc",True,"10.19.2017.nordc"),("10.21.2017.nordc",True,"10.20.2017.nordc"),
 #                 ("10.22.2017.nordc",True,"10.21.2017.nordc"),("10.23.2017.nordc",True,"10.22.2017.nordc"),
@@ -146,15 +148,19 @@ def solve(instance):
     """
     # ### Solve ### #
     if executable != "":
-        solver = SolverFactory("cplex", executable=executable) 
+        solver = SolverFactory("cplex", executable=executable)
+        #solver.options['mip_tolerances_absmipgap'] = 0.001 #sets mip optimality gap, which is 1e-06 by default
     else:
         solver = SolverFactory("cplex") 
+        #solver.options['mip_tolerances_absmipgap'] = 0.001
         
     print ("Solving...")
     
     # to keep human-readable files for debugging, set keepfiles = True
+    
     try:
         solution = solver.solve(instance, tee=True, keepfiles=False)
+        #solution = solver.solve(instance, tee=True, keepfiles=False, options={'optimalitytarget':1e-5})
     except PermissionError:
         print("Yuck, a permission error")
         for file in glob.glob("*.log"):
@@ -234,10 +240,13 @@ def run_scenario(directory_structure, load_init):
     results_transmission_line_flow = []
     results_nonsynchreserves = []
     results_secondaryreserves = []
+    results_subzone_reserves = []
+    results_tx_subzone_reserves = []
 
     for t in instance.TIMEPOINTS:
         tmps.append(instance.TIMEPOINTS[t])
         reserve_duals.append(instance.dual[instance.TotalSynchReserveConstraint[t]])
+        results_tx_subzone_reserves.append(instance.txsubzonecontribution[t].value)
         
         for line in instance.TRANSMISSION_LINE:
             transmission_duals.append(instance.dual[instance.TxFromConstraint[t,line]] +\
@@ -259,6 +268,8 @@ def run_scenario(directory_structure, load_init):
             results_synchreserves.append(instance.synchreserves[t,g].value)
             results_nonsynchreserves.append(instance.nonsynchreserves[t,g].value)
             results_secondaryreserves.append(instance.secondaryreserves[t,g].value)
+        for g_sz in instance.SUB_ZONE_GENERATORS:
+            results_subzone_reserves.append(instance.synchreserves[t,g_sz].value)
             
     zones = pd.read_csv(join(dir_str.INPUTS_DIRECTORY, 'zones.csv'))
     for z in zones['zone']:
@@ -266,7 +277,8 @@ def run_scenario(directory_structure, load_init):
     
     return (results_dispatch, len(tmps), results_wind, results_solar, results_curtailment, results_starts,\
             results_shuts, price_duals, reserve_duals, results_synchreserves, len(zone_stamp),\
-            transmission_duals, results_transmission_line_flow, results_nonsynchreserves, results_secondaryreserves)
+            transmission_duals, results_transmission_line_flow, results_nonsynchreserves, results_secondaryreserves,
+            results_subzone_reserves,results_tx_subzone_reserves)
 
 ### RUN MODEL ###
 count_case = 0

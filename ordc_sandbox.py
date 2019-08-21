@@ -59,7 +59,7 @@ def no_ordc(raw_input_dir, case_dir,n_segments):
 def PJM_reserves(raw_input_dir, case_dir,
                  n_segments, lfe, FOR_fe, reserve_short_penalty):
     '''
-    This is meant to pseudo-imitate previous PJM practice (approx 2012-2019 practice)
+    This is meant to pseudo-imitate previous PJM practice (approx 2012-2019 practice, with second step implemented 2014)
     This means for DA cases, only secondary reserves are required
     And though techincally they weren't penalized for lack of holding reserves in DA (just RT),
     there was a $850/MW penalty in RT, so I'll implement that for the DA run too
@@ -97,10 +97,17 @@ def PJM_reserves(raw_input_dir, case_dir,
             full_segment_list.append(s)
             
             if  s==1:
-                full_PrimarySynchMW_list.append(1500)
-                full_PrimaryNonSynchMW_list.append(1500)
+                #first step of ORDC as heuristically defined by PJM
+                full_PrimarySynchMW_list.append(1400) #1400 seems best approximation of n-1
+                full_PrimaryNonSynchMW_list.append(2100)
                 full_SecondaryMW_list.append(reserve_requirement_np[t-1]) #has to be offset by 1 because Python indexes from 0
                 full_price_list.append(reserve_short_penalty)
+            elif s==2:
+                #second step of ORDC as heuristically defined by PJM
+                full_PrimarySynchMW_list.append(190)
+                full_PrimaryNonSynchMW_list.append(190)
+                full_SecondaryMW_list.append(190) #this didn't really exist but doubt it affects results
+                full_price_list.append(reserve_short_penalty*(3./8.5))
             else:
                 full_SecondaryMW_list.append(0)
                 full_price_list.append(0)
@@ -331,7 +338,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
 
     #voll = 3500 #probably want to input/change this at some point but OK for now
     store_lolp =[]
-    #store_primarysynch_segment = []
+    store_primarysynch_segment = []
     store_primarynonsynch_segment = []
     store_secondary_segment = []
     store_timepoint = []
@@ -365,15 +372,17 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
                 store_lolp.append(cumulative_lolp*VOLL)
                 #create ordc segments
                 #store_primarysynch_segment.append() #yikes
+                store_primarysynch_segment.append((2./.3)*seg_length*primary_reserve_scalar)
                 store_primarynonsynch_segment.append(seg_length*primary_reserve_scalar) #scaled by fraction of hour for now, though not exact method
                 store_secondary_segment.append(seg_length*secondary_reserve_scalar)
                 #store timepoint
                 store_timepoint.append(t)
     
-    #note that synchMW will always be 1500, presumed based on largest contingency and so not dynamic
+    #note that synchMW is now 2/3 of non-synch, based on historic PJM practice. This means these requirements
+    #are **NOT** based on the single largest contingency
     segment_df = pd.DataFrame({'timepoint':store_timepoint,
               'segments':list(range(1,n_segments+1))*int(max(hourly_stack_wtemp.timepoint.unique())),
-              'SynchMW': list([1500]+[0]*(n_segments-1))*int(max(hourly_stack_wtemp.timepoint.unique())),
+              'SynchMW': store_primarysynch_segment,
               'NonSynchMW':store_primarynonsynch_segment,
               'SecondaryMW':store_secondary_segment,
               'Price':store_lolp})

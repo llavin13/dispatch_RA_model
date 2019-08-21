@@ -246,7 +246,7 @@ def create_hourly_lines(lines, zone_list, load_df_for_timepoints):
 
     return df
 
-def create_zones(zone_df, zone_list, wind, solar, hydro_df, hydro_fracs):
+def create_zones(zone_df, zone_list, subzone_status, wind, solar, hydro_df, hydro_fracs):
     #hydro_df['indices'] = list(range(1,load_df.shape[0]+1))
     #hydro_df = hydro_df.set_index('indices')
     hydro_fracs = hydro_fracs.set_index('zone')
@@ -261,18 +261,20 @@ def create_zones(zone_df, zone_list, wind, solar, hydro_df, hydro_fracs):
         wind_cap.append(wind.iloc[0][str(z)])
         solar_cap.append(solar.iloc[0][str(z)])
         total_hydro.append(sum(hydro_df.Avg)*hydro_fracs.loc[z]['hydro_frac'])
+        
         #wind_cap.append(sum(zone_df.wind_capacity_MW[zone_df.Assigned_Zone==z]))
         #solar_cap.append(sum(zone_df.solar_capacity_MW[zone_df.Assigned_Zone==z]))
     df = pd.DataFrame(
     {'zone': zone_index,
      'wind_cap': wind_cap,
      'solar_cap': solar_cap,
-     'total_hydro': total_hydro
+     'total_hydro': total_hydro,
+     'in_sub_zone': subzone_status
     })
     
     return df
 
-def knit_generator_zone(gens, zones, hydro_df):
+def knit_generator_zone(gens, zones, subzone_status, hydro_df):
     '''
     takes list of zones, and df of generators, and knits together to get the capacity of 
     each generator in a zone
@@ -295,19 +297,24 @@ def knit_generator_zone(gens, zones, hydro_df):
     ramp_rate = []
     ramp_start = []
     ramp_shut = []
-    for z in zones:
+    in_subzone = []
+    for z in range(len(zones)):
         for g in list(gens.index):
             try:
                 cf = cap_factor[g]
             except KeyError:
                 cf = 1
             gen_index.append(g)
-            zone_index.append(z)
+            zone_index.append(zones[z])
             cf=1 #overwrites to full capacity
-            if z == gens.Assigned_Zone[g]:
+            if zones[z] == gens.Assigned_Zone[g]:
                 gen_zone_cap.append(max(0,gens.RATINGMW_y[g]*cf))
             else:
                 gen_zone_cap.append(0)
+            if zones[z] == gens.Assigned_Zone[g] and subzone_status[z]==1:
+                in_subzone.append(1)
+            else:
+                in_subzone.append(0)
             ramp_rate.append(gens.RATINGMW_y[g]*gens.ramp_rate[g]*minutes_in_tmp) #gets the hourly ramp rate
             ramp_start.append(gens.RATINGMW_y[g]*gens.Pmin[g]*1.001) #I think ok
             ramp_shut.append(gens.RATINGMW_y[g]*gens.Pmin[g]*.1) #derate this bc of shutdown concerns
@@ -317,7 +324,8 @@ def knit_generator_zone(gens, zones, hydro_df):
      'capacity': gen_zone_cap,
      'Ramp_Rate': ramp_rate,
      'Ramp_Start': ramp_start,
-     'Ramp_Shutdown': ramp_shut
+     'Ramp_Shutdown': ramp_shut,
+     'In_Sub_Zone': in_subzone
     })
     return df
 
@@ -379,6 +387,13 @@ def create_operating_reserve_curve(n_segments, price_cap):
     })
     return df
 
+def create_zone_assign_col(row):
+    'not used right now'
+    if row['Zone'] == "WEST":
+        val = 0
+    else:
+        val = 1
+    return val
 
 ## DUMP TO OUTPUT FILES ##
 
@@ -462,9 +477,10 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
     if init:
         out_init = create_gens_init(gens_w_zone)
         out_init.to_csv(os.path.join(results_directory,"initialize_generators.csv"), index=False)
-    pjm_out_full = gens_w_zone[['X','UNITNAME','ZONE','ID6_y','RATINGMW_y','marginalcost','can_spin','UTILUNIT_y']]
+    pjm_out_full = gens_w_zone[['X','UNITNAME','ZONE','ID6_y','RATINGMW_y','marginalcost','can_spin','UTILUNIT_y','In_Sub_Zone']]
     pjm_out_full = pjm_out_full.sort_values('X')
-    pjm_out_full.columns = ['Gen_Index',	'Name', 'Zone',	'Category',	'Capacity',	'Fuel_Cost',	'Can_Spin', 'UTILUNIT']
+    pjm_out_full.columns = ['Gen_Index',	'Name', 'Zone',	'Category',	'Capacity',	'Fuel_Cost',	'Can_Spin', 'UTILUNIT','In_Sub_Zone']
+    #pjm_out_full['In_Sub_Zone'] = pjm_out_full.apply(create_zone_assign_col, axis=1)
     pjm_out_full.to_csv(os.path.join(results_directory,"PJM_generators_full.csv"), index=False)
     
     #create generator segments
@@ -480,14 +496,19 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
     #recall we have now loaded the zone file a bit earlier
     zone_list = list(zone_file.Assigned_Zone.unique())
     if len(zone_list)==5: #my purposeful pjm sorting
-        print('re-ordering zones according to my criteria')
+        print('re-ordering zones according to my criteria and noting their subzone status')
         new_zone_list = []
+        mad_subzone_status = []
         for z in [0,3,4,1,2]:
             new_zone_list.append(zone_list[z])
+            if zone_list[z]=="WEST":
+                mad_subzone_status.append(0)
+            else:
+                mad_subzone_status.append(1)
         zone_list = new_zone_list
     
     hydro_df = data[12]
-    pjm_gens_zones = knit_generator_zone(gens_w_zone, zone_list, hydro_df)
+    pjm_gens_zones = knit_generator_zone(gens_w_zone, zone_list, mad_subzone_status, hydro_df)
     pjm_gens_zones.to_csv(os.path.join(results_directory,"PJM_generators_zone.csv"), index=False)
     
     #attempt to re-do the hydro
@@ -538,7 +559,7 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
         zone_df.to_csv(os.path.join(results_directory,"zones.csv"))
     else:
         #create zones csv
-        zone_df = create_zones(zone_file, zone_list, data[9], data[10], data[15], hydro_frac_df) #now adds wind and solar installed data
+        zone_df = create_zones(zone_file, zone_list, mad_subzone_status, data[9], data[10], data[15], hydro_frac_df) #now adds wind and solar installed data
         zone_df.to_csv(os.path.join(results_directory,"zones.csv"), index=False)
         #create timepoints/zones csv
         timepoints_zonal_df = create_zonal_timepoints(zone_file, zone_list, loadMW, data[5], data[6], data[14], data[15], hydro_frac_df)

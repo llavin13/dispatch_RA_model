@@ -70,7 +70,7 @@ dispatch_model.reservescalarratio = Param(dispatch_model.TIMEPOINTS, within=NonN
 dispatch_model.windcap = Param(dispatch_model.ZONES, within=NonNegativeReals)
 dispatch_model.solarcap = Param(dispatch_model.ZONES, within=NonNegativeReals)
 dispatch_model.totalhydro = Param(dispatch_model.ZONES, within=NonNegativeReals)
-
+dispatch_model.insubzone = Param(dispatch_model.ZONES, within=Binary)
 
 #generator-dependent params
 dispatch_model.fuelcost = Param(dispatch_model.GENERATORS, within=NonNegativeReals)
@@ -95,7 +95,7 @@ dispatch_model.capacity = Param(dispatch_model.GENERATORS, dispatch_model.ZONES,
 dispatch_model.ramp = Param(dispatch_model.GENERATORS, dispatch_model.ZONES, within=NonNegativeReals) #rate is assumed to be equal up and down
 dispatch_model.rampstartuplimit = Param(dispatch_model.GENERATORS, dispatch_model.ZONES, within=NonNegativeReals) #special component of the ramping constraint on the startup hour
 dispatch_model.rampshutdownlimit = Param(dispatch_model.GENERATORS, dispatch_model.ZONES, within=NonNegativeReals) #special component of the ramping constraint on the shutdown hour ---- NEW
-
+dispatch_model.insubzonegen = Param(dispatch_model.GENERATORS, dispatch_model.ZONES, within=Binary)
 
 #reserve segment-dependent params
 ### THESE ARE NO LONGER USED IN THE MODEL AS OF 4.14.19 ###
@@ -130,6 +130,7 @@ dispatch_model.generatormarginalcost = Param(dispatch_model.GENERATORS, dispatch
 # ###### SUBSETS ####### #
 ###########################
 
+#subsets hydro resources so can determine different operational characteristics for them
 def hydro_resources_init(model):
     hydro_resources = list()
     for g in model.GENERATORS:
@@ -139,6 +140,7 @@ def hydro_resources_init(model):
 
 dispatch_model.HYDRO_GENERATORS = Set(within=dispatch_model.GENERATORS, initialize=hydro_resources_init)
 
+#this isn't currently used because ability to quickstart is implemented as a boolean parameter, but one coudl subset the quick start generators and give them certain characteristics
 def quick_start_resources_init(model):
     quick_start_resources = list()
     for g in model.GENERATORS:
@@ -148,6 +150,36 @@ def quick_start_resources_init(model):
 
 dispatch_model.QUICK_START_GENERATORS = Set(within=dispatch_model.GENERATORS, initialize=quick_start_resources_init)
 
+#subsets generators in zones that are part of a SINGLE reserve subzone for which want to check reserve sufficiency
+def reserve_subzone_gens_init(model):
+    sub_zone_gens = list()
+    for z in model.ZONES:
+        for g in model.GENERATORS:
+            if model.insubzonegen[g,z]==1:
+                sub_zone_gens.append(g)
+    return sub_zone_gens
+
+dispatch_model.SUB_ZONE_GENERATORS = Set(within=dispatch_model.GENERATORS, initialize=reserve_subzone_gens_init)
+
+#reserve subzones
+def reserve_subzone_init(model):
+    sub_zones = list()
+    for z in model.ZONES:
+        if model.insubzone[z]==1:
+            sub_zones.append(z)
+    return sub_zones
+
+dispatch_model.SUB_ZONES = Set(within=dispatch_model.ZONES, initialize=reserve_subzone_init)
+
+#main or external to sub-zone zones
+def not_reserve_subzone_init(model):
+    not_sub_zones = list()
+    for z in model.ZONES:
+        if model.insubzone[z]==0:
+            not_sub_zones.append(z)
+    return not_sub_zones
+
+dispatch_model.NOT_SUB_ZONES = Set(within=dispatch_model.ZONES, initialize=not_reserve_subzone_init)
 
 ###########################
 # ######## VARS ######### #
@@ -177,6 +209,11 @@ dispatch_model.nonsynchsegmentreserves = Var(dispatch_model.TIMEPOINTS, dispatch
 
 dispatch_model.secondarysegmentreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS,
                                       within = NonNegativeReals, initialize=0)
+
+dispatch_model.subzonesegmentreserves = Var(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS,
+                                      within = NonNegativeReals, initialize=0)
+
+dispatch_model.txsubzonecontribution = Var(dispatch_model.TIMEPOINTS, within = NonNegativeReals, initialize=0)
 
 dispatch_model.windgen = Var(dispatch_model.TIMEPOINTS, dispatch_model.ZONES,
                               within = NonNegativeReals, initialize=0)
@@ -438,7 +475,7 @@ def GenNonSynchReserveRule(model,t,g):
 dispatch_model.GenNonSynchReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS, rule=GenNonSynchReserveRule)
 
 
-## SECONDARY RESERVES - HELD BY INVIDIVUAL GENERATOR ##   
+## SECONDARY RESERVES - HELD BY INDIVIDUAL GENERATOR ##   
 
 #secondary reserves held by individual generator must be less than held primary reserves times temporal multiplier
 #temporal multiplier is ratio of how much longer time window is for secondary vs. primary reserves (30 mins v. 10 mins in PJM)
@@ -471,7 +508,8 @@ dispatch_model.TotalSynchReserveConstraint = Constraint(dispatch_model.TIMEPOINT
 #dispatch_model.SpintoNonSpinRatioConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=SpintoNonSpinRatioRule)
 
 def SegmentReserveRule(model,t,s):
-    return model.SynchMW[t,s] >= model.segmentreserves[t,s]
+    return model.segmentreserves[t,s] >= model.SynchMW[t,s] #implements as hard constraint
+    #return model.SynchMW[t,s] >= model.segmentreserves[t,s] #penalty facor constraint must be linked with objective function
 dispatch_model.SegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=SegmentReserveRule)
 
 ## TOTAL PRIMARY NON-SYNCH RESERVES HELD ##
@@ -494,6 +532,47 @@ def SecondarySegmentReserveRule(model,t,s):
     return model.SecondaryMW[t,s] >= model.secondarysegmentreserves[t,s]
 dispatch_model.SecondarySegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=SecondarySegmentReserveRule)
 
+## HOLDING OF SUB-ZONAL PRIMARY SYNCH RESERVES ##
+
+def TotalSubZonalSynchReserveRule(model,t):
+    #find out how much excess capacity is on lines that deliver to constrained zone(s)
+    
+    tx_line_reserves = 0
+    for line in model.TRANSMISSION_LINE:
+        for sz in model.SUB_ZONES:
+            for nsz in model.NOT_SUB_ZONES:
+                if model.transmission_to[t, line] == sz or model.transmission_from[t, line] == sz:
+                    if model.transmission_to[t, line] == sz and model.transmission_from[t,line] == nsz:
+                        tx_line_reserves += model.transmission_to_capacity[t, line]-model.transmit_power_MW[t, line]
+                    elif model.transmission_from[t, line] == sz and model.transmission_to[t,line]==nsz:
+                        tx_line_reserves -= model.transmission_from_capacity[t, line]-model.transmit_power_MW[t, line]
+    
+    
+    #return
+    #return (sum(model.synchreserves[t,g_sz] for g_sz in model.SUB_ZONE_GENERATORS)+tx_line_reserves >= 500)
+    return (sum(model.synchreserves[t,g_sz] for g_sz in model.GENERATORS)+tx_line_reserves >= sum(model.subzonesegmentreserves[t,s] for s in model.SEGMENTS))
+dispatch_model.TotalSubZonalSynchReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=TotalSubZonalSynchReserveRule)
+
+def LineSynchReserveContributionRule(model,t):
+    
+    tx_line_reserves = 0
+    for line in model.TRANSMISSION_LINE:
+        for sz in model.SUB_ZONES:
+            for nsz in model.NOT_SUB_ZONES:
+                if model.transmission_to[t, line] == sz or model.transmission_from[t, line] == sz:
+                    if model.transmission_to[t, line] == sz and model.transmission_from[t,line] == nsz:
+                        tx_line_reserves += model.transmission_to_capacity[t, line]-model.transmit_power_MW[t, line]
+                    elif model.transmission_from[t, line] == sz and model.transmission_to[t,line]==nsz:
+                        tx_line_reserves -= model.transmission_from_capacity[t, line]-model.transmit_power_MW[t, line]
+    return tx_line_reserves == model.txsubzonecontribution[t]
+
+dispatch_model.LineSynchReserveContributionConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=LineSynchReserveContributionRule)
+    
+
+def SubZonalSegementReserveRule(model,t,s):
+    return model.SynchMW[t,s] >= model.subzonesegmentreserves[t,s]
+dispatch_model.SubZonalSynchSegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=SubZonalSegementReserveRule)
+
 ###########################
 # ###### OBJECTIVE ###### #
 ###########################
@@ -503,10 +582,12 @@ def objective_rule(model):
     return sum(sum(sum(sum(model.segmentdispatch[t,g,z,gs] for z in model.ZONES) for t in model.TIMEPOINTS)*model.generatormarginalcost[g,gs] for g in model.GENERATORS) for gs in model.GENERATORSEGMENTS)+\
            sum(sum(model.commitment[t,g] for t in model.TIMEPOINTS)*model.noloadcost[g] for g in model.GENERATORS)+\
            sum(sum(model.startup[t,g] for t in model.TIMEPOINTS)*model.startcost[g] for g in model.GENERATORS)-\
-           sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
            sum(sum(model.price[t,s]*model.nonsynchsegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
-           sum(sum(model.price[t,s]*model.secondarysegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
+           sum(sum(model.price[t,s]*model.secondarysegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+           sum(sum(model.price[t,s]*model.subzonesegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
            sum(sum(model.hurdle_rate[t, line]*model.transmit_power_MW[t, line] for line in model.TRANSMISSION_LINE) for t in model.TIMEPOINTS)
+    #sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+    #sum(sum(model.price[t,s]*model.subzonesegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
     #sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
     #return(sum(sum(sum(model.dispatch[t,g,z] for z in model.ZONES) for t in model.TIMEPOINTS)*model.fuelcost[g] for g in model.GENERATORS) +\
     #DESCRIPTION OF OBJECTIVE

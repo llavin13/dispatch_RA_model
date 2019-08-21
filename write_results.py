@@ -180,6 +180,7 @@ def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, r
     results_synch_reserve_prices = []
     results_nonsynch_reserve_prices = []
     results_secondary_reserve_prices = []
+    results_subzone_synch_reserve_prices = []
     results_penalty_factors = []
     index_name = []
     timepoints_list = []
@@ -190,6 +191,7 @@ def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, r
             results_synch_reserve_prices.append(format_2f(-instance.dual[instance.TotalSynchReserveConstraint[t]]))
             results_nonsynch_reserve_prices.append(format_2f(-instance.dual[instance.TotalNonSynchReserveConstraint[t]]))
             results_secondary_reserve_prices.append(format_2f(-instance.dual[instance.TotalSecondaryReserveConstraint[t]]))
+            results_subzone_synch_reserve_prices.append(format_2f(-instance.dual[instance.TotalSubZonalSynchReserveConstraint[t]]))
             #reserves multiplied by -1 to report as positive lost opportunity cost of marginal reserve resource
             timepoints_list.append(t)
     for z in zones_set:
@@ -205,11 +207,12 @@ def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, r
                     recorded_timepoints.append(t)           
     
     col_names = ['hour','LMP','PrimarySynchReservePrice','PrimaryNonSynchReservePrice',
-                 'SecondaryReservePrice','PrimarySynchPenaltyFactor']
+                 'SecondaryReservePrice','SubZonePrimarySynchReservePrice','PrimarySynchPenaltyFactor']
     df = pd.DataFrame(data=np.column_stack((np.asarray(timepoints_list), np.asarray(results_prices), 
                        np.asarray(results_synch_reserve_prices),
                        np.asarray(results_nonsynch_reserve_prices),
                        np.asarray(results_secondary_reserve_prices),
+                       np.asarray(results_subzone_synch_reserve_prices),
                        np.asarray(results_penalty_factors[0:len(timepoints_list)]))),
                        columns=col_names,
                        index=pd.Index(index_name))

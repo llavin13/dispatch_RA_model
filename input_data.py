@@ -59,7 +59,8 @@ def scenario_inputs(inputs_directory):
               param=(model_script.dispatch_model.capacity,
                      model_script.dispatch_model.ramp,
                      model_script.dispatch_model.rampstartuplimit,
-                     model_script.dispatch_model.rampshutdownlimit)
+                     model_script.dispatch_model.rampshutdownlimit,
+                     model_script.dispatch_model.insubzonegen)
               )
 
     #this is effectively defunct and used only for loading the index
@@ -90,7 +91,8 @@ def scenario_inputs(inputs_directory):
               index=model_script.dispatch_model.ZONES,
               param=(model_script.dispatch_model.windcap,
                      model_script.dispatch_model.solarcap,
-                     model_script.dispatch_model.totalhydro)
+                     model_script.dispatch_model.totalhydro,
+                     model_script.dispatch_model.insubzone)
               )          
 
     data.load(filename=os.path.join(inputs_directory, "timepoints_zonal.csv"),

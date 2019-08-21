@@ -22,6 +22,9 @@ from pyomo.environ import *
 from pyomo.opt import SolverFactory
 import matplotlib.pyplot as plt
 
+#other scripts
+from case_inputs import case_folder
+
 
 def diagnostic_plots(scenario_results, dir_str):
     #PLOTS ONLY
@@ -32,6 +35,7 @@ def diagnostic_plots(scenario_results, dir_str):
     synch_results_np = np.reshape(scenario_results[9], (int(scenario_results[1]), int(len(scenario_results[9])/scenario_results[1])))
     nonsynch_results_np = np.reshape(scenario_results[13], (int(scenario_results[1]), int(len(scenario_results[13])/scenario_results[1])))
     secondary_results_np = np.reshape(scenario_results[14], (int(scenario_results[1]), int(len(scenario_results[14])/scenario_results[1])))
+    subzone_synch_results_np = np.reshape(scenario_results[15],(int(scenario_results[1]), int(len(scenario_results[15])/scenario_results[1])))
     
     wind_results_np = np.reshape(scenario_results[2], (int(scenario_results[1]), int(len(scenario_results[2])/scenario_results[1])))
     solar_results_np = np.reshape(scenario_results[3], (int(scenario_results[1]), int(len(scenario_results[3])/scenario_results[1])))
@@ -43,8 +47,10 @@ def diagnostic_plots(scenario_results, dir_str):
     
     #read in the gen and zone types so aggregation can be done for plots
     gens = pd.read_csv(join(dir_str.INPUTS_DIRECTORY, 'PJM_generators_full.csv'))
+    subzone_gens = gens.drop(gens[gens.In_Sub_Zone == 0].index)
     zones = pd.read_csv(join(dir_str.INPUTS_DIRECTORY, 'zones.csv'))
     line_names = pd.read_csv(join(dir_str.INPUTS_DIRECTORY, 'transmission_lines.csv'))
+    #full_tx_lines = pd.read_csv(join(dir_str.INPUTS_DIRECTORY, 'transmission_lines_hourly.csv'))
     
     gens_list = []
     zones_list = []
@@ -54,18 +60,25 @@ def diagnostic_plots(scenario_results, dir_str):
     synchreserves = []
     nonsynchreserves = []
     secondaryreserves = []
+    subzonereserves = []
     wind_power = []
     solar_power = []
     curtail_power = []
+            
+    
     
     for g in gens['Category'].unique():
+        #print(g) #placeholder for now
         gen_type = (gens['Category']==g)
+        subzone_gen_type = (subzone_gens['Category']==g)
+        #subzone_gen_type = gens
         
         start.append(np.dot(start_results_np,np.array(gen_type)))
         shut.append(np.dot(shut_results_np,np.array(gen_type)))
         synchreserves.append(np.dot(synch_results_np,np.array(gen_type)))
         nonsynchreserves.append(np.dot(nonsynch_results_np,np.array(gen_type)))  
         secondaryreserves.append(np.dot(secondary_results_np,np.array(gen_type)))
+        subzonereserves.append(np.dot(subzone_synch_results_np,np.array(subzone_gen_type)))
     
     for z in range(len(zones['zone'])):
         wind_power.append(wind_results_np[:,z])
@@ -74,6 +87,9 @@ def diagnostic_plots(scenario_results, dir_str):
         for g in gens['Category'].unique():
             gen_type = (gens['Category']==g)
             y.append(np.dot(scenario_results_np[:,z*len(gen_type):(z+1)*len(gen_type)],np.array(gen_type)))
+    
+    subzonereserves.append(np.array(scenario_results[16])) #adds in the transmission contribution to subzone reserves
+    
     
     # Your x and y axis
     x=range(1,int(scenario_results[1])+1)
@@ -86,7 +102,8 @@ def diagnostic_plots(scenario_results, dir_str):
         
         plt.plot([],[],color='b', label='Hydro', linewidth=5)
         plt.plot([],[],color='m', label='Nuclear', linewidth=5)
-        plt.plot([],[],color='k', label='Coal', linewidth=5)
+        plt.plot([],[],color='k', label='Large Coal', linewidth=5)
+        plt.plot([],[],color='slategray', label='Small Coal', linewidth=5)
         plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
         plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
         plt.plot([],[],color='g', label='Oil', linewidth=5)
@@ -95,9 +112,15 @@ def diagnostic_plots(scenario_results, dir_str):
         plt.plot([],[],color='yellow', label='Solar', linewidth=5)
         plt.plot([],[],color='red', label='Curtailment', linewidth=5)
         
-        plt.stackplot(x,y[adder+4],y[adder+5],y[adder+2],y[adder+0],y[adder+1],y[adder+3],y[adder+6],
-                      wind_power[z],solar_power[z],curtail_power[z],
-                      colors=['b','m','k','orange','sienna','g','silver','cyan','yellow','red'])
+        if case_folder == "TOYCASE":
+            plt.stackplot(x,y[adder+5],y[adder+6],y[adder+2],y[adder+4],y[adder+0],y[adder+1],y[adder+3],y[adder+7],
+                          wind_power[z],solar_power[z],curtail_power[z],
+                          colors=['b','m','k','slategray','orange','sienna','g','silver','cyan','yellow','red'])
+        else:
+            plt.stackplot(x,y[adder+4],y[adder+6],y[adder+2],y[adder+5],y[adder+0],y[adder+1],y[adder+3],y[adder+7],
+                          wind_power[z],solar_power[z],curtail_power[z],
+                          colors=['b','m','k','slategray','orange','sienna','g','silver','cyan','yellow','red'])
+        
         plt.title('Zone ' + zones['zone'][z] + ' Generator Dispatch')
         plt.ylabel('Load (MW)')
         plt.xlabel('Hour')
@@ -107,13 +130,18 @@ def diagnostic_plots(scenario_results, dir_str):
     #do also for starts
     plt.plot([],[],color='b', label='Hydro', linewidth=5)
     plt.plot([],[],color='m', label='Nuclear', linewidth=5)
-    plt.plot([],[],color='k', label='Coal', linewidth=5)
+    plt.plot([],[],color='k', label='Large Coal', linewidth=5)
+    plt.plot([],[],color='slategray', label='Small Coal', linewidth=5)
     plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
     plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
     plt.plot([],[],color='g', label='Oil', linewidth=5)
     
-    plt.stackplot(x,start[4],start[5],start[2],start[0],start[1],start[3],
-                  colors=['b','m','k','orange','sienna','g'])
+    if case_folder == "TOYCASE":
+        plt.stackplot(x,start[5],start[6],start[2],start[4],start[0],start[1],start[3],
+                  colors=['b','m','k','slategray','orange','sienna','g'])
+    else:
+        plt.stackplot(x,start[4],start[6],start[2],start[5],start[0],start[1],start[3],
+                  colors=['b','m','k','slategray','orange','sienna','g'])
     plt.ylabel('StartUps (# Plants)')
     plt.xlabel('Hour')
     plt.legend()
@@ -122,13 +150,18 @@ def diagnostic_plots(scenario_results, dir_str):
     #and shuts
     plt.plot([],[],color='b', label='Hydro', linewidth=5)
     plt.plot([],[],color='m', label='Nuclear', linewidth=5)
-    plt.plot([],[],color='k', label='Coal', linewidth=5)
+    plt.plot([],[],color='k', label='Large Coal', linewidth=5)
+    plt.plot([],[],color='slategray', label='Small Coal', linewidth=5)
     plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
     plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
     plt.plot([],[],color='g', label='Oil', linewidth=5)
     
-    plt.stackplot(x,shut[4],shut[5],shut[2],shut[0],shut[1],shut[3],
-                  colors=['b','m','k','orange','sienna','g'])
+    if case_folder == "TOYCASE":
+        plt.stackplot(x,shut[5],shut[6],shut[2],shut[4],shut[0],shut[1],shut[3],
+                  colors=['b','m','k','slategray','orange','sienna','g'])
+    else:
+        plt.stackplot(x,shut[4],shut[6],shut[2],shut[5],shut[0],shut[1],shut[3],
+                  colors=['b','m','k','slategray','orange','sienna','g'])
     plt.ylabel('Shutdowns (# Plants)')
     plt.xlabel('Hour')
     plt.legend()
@@ -137,13 +170,18 @@ def diagnostic_plots(scenario_results, dir_str):
     #and for the held synch reserves by generator type
     plt.plot([],[],color='b', label='Hydro', linewidth=5)
     plt.plot([],[],color='m', label='Nuclear', linewidth=5)
-    plt.plot([],[],color='k', label='Coal', linewidth=5)
+    plt.plot([],[],color='k', label='Large Coal', linewidth=5)
+    plt.plot([],[],color='slategray', label='Small Coal', linewidth=5)
     plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
     plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
     plt.plot([],[],color='g', label='Oil', linewidth=5)
     
-    plt.stackplot(x,synchreserves[4],synchreserves[5],synchreserves[2],synchreserves[0],synchreserves[1],synchreserves[3],
-                  colors=['b','m','k','orange','sienna','g'])
+    if case_folder == "TOYCASE":
+        plt.stackplot(x,synchreserves[5],synchreserves[6],synchreserves[2],synchreserves[4],synchreserves[0],synchreserves[1],synchreserves[3],
+                  colors=['b','m','k','slategray','orange','sienna','g'])
+    else:
+        plt.stackplot(x,synchreserves[4],synchreserves[6],synchreserves[2],synchreserves[5],synchreserves[0],synchreserves[1],synchreserves[3],
+                  colors=['b','m','k','slategray','orange','sienna','g'])
     plt.ylabel('Held Synch Reserves (MW)')
     plt.xlabel('Hour')
     plt.legend()
@@ -152,13 +190,14 @@ def diagnostic_plots(scenario_results, dir_str):
     #and for the held nonsynch reserves by generator type
     plt.plot([],[],color='b', label='Hydro', linewidth=5)
     plt.plot([],[],color='m', label='Nuclear', linewidth=5)
-    plt.plot([],[],color='k', label='Coal', linewidth=5)
+    plt.plot([],[],color='k', label='Large Coal', linewidth=5)
+    plt.plot([],[],color='slategray', label='Small Coal', linewidth=5)
     plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
     plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
     plt.plot([],[],color='g', label='Oil', linewidth=5)
     
-    plt.stackplot(x,nonsynchreserves[4],nonsynchreserves[5],nonsynchreserves[2],nonsynchreserves[0],nonsynchreserves[1],nonsynchreserves[3],
-                  colors=['b','m','k','orange','sienna','g'])
+    plt.stackplot(x,nonsynchreserves[5],nonsynchreserves[6],nonsynchreserves[2],nonsynchreserves[4],nonsynchreserves[0],nonsynchreserves[1],nonsynchreserves[3],
+                  colors=['b','m','k','slategray','orange','sienna','g'])
     plt.ylabel('Held NonSynch Reserves (MW)')
     plt.xlabel('Hour')
     plt.legend()
@@ -167,14 +206,36 @@ def diagnostic_plots(scenario_results, dir_str):
     #and for the held secondary reserves by generator type
     plt.plot([],[],color='b', label='Hydro', linewidth=5)
     plt.plot([],[],color='m', label='Nuclear', linewidth=5)
-    plt.plot([],[],color='k', label='Coal', linewidth=5)
+    plt.plot([],[],color='k', label='Large Coal', linewidth=5)
+    plt.plot([],[],color='slategray', label='Small Coal', linewidth=5)
     plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
     plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
     plt.plot([],[],color='g', label='Oil', linewidth=5)
     
-    plt.stackplot(x,secondaryreserves[4],secondaryreserves[5],secondaryreserves[2],secondaryreserves[0],secondaryreserves[1],secondaryreserves[3],
-                  colors=['b','m','k','orange','sienna','g'])
+    plt.stackplot(x,secondaryreserves[5],secondaryreserves[6],secondaryreserves[2],secondaryreserves[4],secondaryreserves[0],secondaryreserves[1],secondaryreserves[3],
+                  colors=['b','m','k','slategray','orange','sienna','g'])
     plt.ylabel('Held Secondary Reserves (MW)')
+    plt.xlabel('Hour')
+    plt.legend()
+    plt.show()
+    
+    #and do held sub-zonal synch reserves (this will be MAD in PJM)
+    plt.plot([],[],color='b', label='Hydro', linewidth=5)
+    plt.plot([],[],color='m', label='Nuclear', linewidth=5)
+    plt.plot([],[],color='k', label='Large Coal', linewidth=5)
+    plt.plot([],[],color='slategray', label='Small Coal', linewidth=5)
+    plt.plot([],[],color='orange', label='Gas CC', linewidth=5)
+    plt.plot([],[],color='sienna', label='Gas CT', linewidth=5)
+    plt.plot([],[],color='g', label='Oil', linewidth=5)
+    plt.plot([],[],color='silver', label='Deliverable Transmission', linewidth=5)
+    
+    if case_folder == "TOYCASE":
+        plt.stackplot(x,subzonereserves[5],subzonereserves[6],subzonereserves[2],subzonereserves[4],subzonereserves[0],subzonereserves[1],subzonereserves[3],subzonereserves[8],
+                  colors=['b','m','k','slategray','orange','sienna','g','silver'])
+    else:
+        plt.stackplot(x,subzonereserves[4],subzonereserves[6],subzonereserves[2],subzonereserves[5],subzonereserves[0],subzonereserves[1],subzonereserves[3],subzonereserves[8],
+                  colors=['b','m','k','slategray','orange','sienna','g','silver'])
+    plt.ylabel('Held SubZone Synch Reserves (MW)')
     plt.xlabel('Hour')
     plt.legend()
     plt.show()
