@@ -75,6 +75,11 @@ loadResults <- function(dates, case){
   ordc <- ordc[,c("timepoint","segments","SynchMW","Price","date")]
   colnames(ordc) <- c("timepoint","segments","MW","Price","date")
   
+  #overwrite, but defunct
+  #modelLMP$newLMP <- 0
+  #modelLMP <- transform(modelLMP, newLMP = ifelse(PrimarySynchPenaltyFactor == 300 & LMP>300, LMP-PrimarySynchPenaltyFactor, LMP))
+  #print(modelLMP)
+  
   #reformat zonal prices so it matches previous format
   modelLMP <- modelLMP[,c("X","hour","LMP","date")]
   
@@ -125,7 +130,7 @@ readPJM_LMPs <- function(dates){
   return(reportedLMPsub)
 }
 
-plotLMPs <- function(results, dates, plotTitle, truncate_value=NA){
+plotLMPs <- function(results, dates, plotTitle, truncate_value=60){
   
   modelLMP <- aggregateCaseData(results, "modelLMP")
   
@@ -171,17 +176,21 @@ plotLMPs <- function(results, dates, plotTitle, truncate_value=NA){
   fullLMP$datetime <- as.POSIXct(fullLMP$datetime, format = "%Y-%m-%d %H")
   
   # plot
-  cases <- c("reported", "NoReserves", "PJMHistorical", "SimpleORDC", "fullORDC")
+  cases <- c("reported", "PJMHistorical","PJMHistoricalUpdateReserves",
+             "PJMHistoricalwCoalSplit")
   
-  brian_colors <- c('#4daf4a','#377eb8','#000000','#984ea3','#ff7f00')
+  brian_colors <- c('#4daf4a','#377eb8','#984ea3','#000000')
+                    #,'#984ea3','#ff7f00')
   my_color_palette <- c("green","red","blue","black","grey")
+  #scale_linetype_manual(breaks = cases, values=c(3,2,1,4,5)) +
+  #scale_colour_manual(breaks = cases, values=brian_colors) +
   
   LMPplot <- ggplot(data=fullLMP, aes(x=datetime, y=LMP, colour=case, linetype=case)) + 
-    facet_wrap(~Node) + geom_line(size=1.5) + theme_classic() + 
+    facet_wrap(~Node) + geom_line(size=1.2) + theme_classic() + 
     xlab("") + ylab("LMP ($ per MWh)") + 
     guides(colour=guide_legend(title="Scenario: "),linetype=guide_legend(title="Scenario: ")) + 
-    scale_linetype_manual(breaks = cases, values=c(3,2,1,4,5)) +
-    scale_colour_manual(breaks = cases, values=my_color_palette) +
+    scale_linetype_manual(breaks = cases, values=c(3,2,4,1)) +
+    scale_colour_manual(breaks = cases, values=brian_colors) +
     theme(legend.text = element_text(size=20),
           legend.title=element_text(size=20),
           legend.position = "bottom",
@@ -404,7 +413,14 @@ plotDispatch <- function(results, dates, case, plotTitle, hours=24){
   
   
   fuelDispatch$Category <- factor(fuelDispatch$Category, levels = c("curtailment", "DR", "wind", "solar", "DS", 
-                                                                    "CT", "CC", "ST", "NU", "HD", NA))
+                                                                    "CT", "CC", "ST1", "ST2", "NU", "HD", NA))
+  #create color panel for later use
+  dispatchcolors <- c("red","gray90","cyan","yellow","green",
+                      "brown","orange","gray50","black","purple","blue")
+  
+  #drop NA's
+  fuelDispatch <- fuelDispatch[!is.na(fuelDispatch$Category),]
+  
   #fuelDispatch$Category <- mapvalues()
   # calculate PJM wide
   PJM_dispatch <- ddply(fuelDispatch, ~ datetime + Category, summarize, MW = sum(MW))
@@ -418,9 +434,23 @@ plotDispatch <- function(results, dates, case, plotTitle, hours=24){
   #fuelDispatch 
   fuelDispatch$Category <- droplevels(fuelDispatch$Category)
   
+  #Brian's plotting code (defunct)
+  #ggplot(data=fuelDispatch, aes(x=datetime, y=MW/1E3, fill=Category)) + geom_area() + facet_wrap(~zone, nrow=3, scales = "free") + 
+  #  theme_classic() + ylab("GW") + guides(fill=guide_legend(title="")) + xlab("") +
+  #  scale_x_datetime() +
+  #  ggtitle(paste("Generation by fuel for", plotTitle))
+  
+  #Luke's plotting code (active)
   ggplot(data=fuelDispatch, aes(x=datetime, y=MW/1E3, fill=Category)) + geom_area() + facet_wrap(~zone, nrow=3, scales = "free") + 
-    theme_classic() + ylab("GW") + guides(fill=guide_legend(title="")) + xlab("") +
-    scale_x_datetime() +
+    theme_classic() + ylab("GW") + guides(fill=guide_legend(title="", nrow=2, byrow=TRUE)) + xlab("") +
+    scale_x_datetime() + scale_fill_manual(values=dispatchcolors) +
+    theme(legend.text = element_text(size=32),
+          legend.position = "bottom",
+          plot.title = element_text(size = 40, face = "bold", hjust = 0.5),
+          axis.title.y = element_text(size=32),
+          axis.text.x= element_text(size=16),
+          axis.text.y= element_text(size=16),
+          strip.text.x = element_text(size = 24)) +
     ggtitle(paste("Generation by fuel for", plotTitle))
   
   setwd(paste(baseWD, "post_processing", "figures", sep="/"))
@@ -502,9 +532,10 @@ dates1 <- seq(as.POSIXct("1/4/2014", format = "%m/%d/%Y"), by="day", length.out=
 dates2 <- seq(as.POSIXct("10/19/2017", format = "%m/%d/%Y"), by="day", length.out=7)
 
 # cases under consideration
-#cases <- c("NoReserves", "SimpleORDC","SynchORDCtest")
-cases <- c("NoReserves","PJMHistorical","SimpleORDC","fullORDC")
-cases2 <- c("PJMHistorical","fullORDC")
+cases <- c("PJMHistorical", "PJMHistoricalLowFlexCoal","PJMHistoricalNoCoalSynchReserves")
+cases2 <- c("PJMHistorical","PJMHistoricalwCoalSplit")
+#,"PJMHistoricalUpdateReserves",
+#cases2 <- c("PJMHistorical","PJMHist_nohurdle","fullORDC")
 # load data
 results1 <- loadAllCases(dates1, cases=cases)
 results2 <- loadAllCases(dates2, cases=cases2)
@@ -515,12 +546,13 @@ plotLMPs(results2, dates2, plotTitle="Oct 19-25 2017")
 
 plotWeeklyReserveCosts(results1, dates1, plotTitle="Jan 4-10 2014")
 plotWeeklyReserveCosts(results2, dates2, plotTitle="Oct 19-25 2017")
+plotWeeklyReserveCosts(results2, dates2, plotTitle="Jan 4-10 2014")
 
 plotReserves(results1, dates1, plotTitle="Jan 4-10 2014")
 plotReserves(results2, dates2, plotTitle="Oct 19-25 2017")
 
 plotDispatch(results1, dates1, case="fullORDC", plotTitle="Jan 4-10 2014")
-plotDispatch(results2, dates2, case="withORDC", plotTitle="Oct 19-25 2017")
+plotDispatch(results2, dates2, case="PJMHistoricalwCoalSplit", plotTitle="Oct 19-25 2017")
 
 df1 <- results1$fullORDC
 df1tx <- df1$txFlows
@@ -539,7 +571,8 @@ txMapping <- data.frame(from=c("EAST", "WEST", "WEST", "WEST", "DC_BGE_PEP", "DC
                         to=c("PA_METED_PPL", "DC_BGE_PEP", "VA_DOM", "PA_METED_PPL", "VA_DOM", "PA_METED_PPL"))  
 
 plotDeltas(results1, dates1, txMapping, case="withORDC", "Jan 4-10 2014")
-plotDeltas(results2, dates2, txMapping, case="withORDC", "Oct 19-25 2017")
+plotDeltas(results2, dates2, txMapping, case="PJMHistoricalwCoalSplit", "Oct 19-25 2017")
+plotDeltas(results2, dates1, txMapping, case="withORDC","Jan 4-10 2014")
 
 ## Save ####
 setwd(paste(baseWD, "post_processing", sep="/"))
