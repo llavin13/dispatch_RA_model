@@ -7,19 +7,28 @@ Created on Thu Apr 18 08:46:48 2019
 """
 
 #scenario_name = "TEST2" cases are now named below based on their corresponding date
-case_folder = "Oct_19_25_2017_reducetol"
+#case_folder = "Oct_19_25_2017_dynordcnew"
+case_folder = "Jan_4_10_2014_dynordcwithMRR"
 #case_folder = "TOYCASE"
 
 # initialization boolean list should match length of dates
 #make_init_list = [True]
 make_init_list = [True,False,False,False,False,False,False,False]
-create_supp_ordc = False #this chooses whether to create ORDC
+
+create_supp_ordc = True #this chooses whether to create ORDC
 
 #if create_supp_ordc=False, chooses whether to use PJM heuristic or NO reserves
 PJM_reserve_heuristic = True
 
 #if supp ORDC, chooses whether to dynamically calculate it
-dynamic_ORDC = True
+dynamic_ORDC = True #setting this to False again needs testing
+
+# MRR specifications
+#if create_supp_ordc = True AND dynamic_ORDC = True,
+#chooses whether to and how to create MRR in front of ORDC
+#should be more similar to PJM method, though arguably less accurate at day-ahead
+MRR_method = True
+MRRs = {'synch':1400,'nonsynch':2100} #secondary minimum reserve requirements will be based on forecast error inputs 
 
 #where to pull hydro data
 hydro_sheet = "PJM.hydro.gen.jan.2014"
@@ -67,3 +76,5 @@ contingency = 850
 #(10) Hourly scalars
 primary_reserve_scalar = 1./6. #primary reserves are 10 minutes, so 1/6 of an hour
 secondary_reserve_scalar = 1./2. #secondary reserves are 30 minutes, so 1/2 of an hour 
+
+

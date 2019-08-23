@@ -126,7 +126,8 @@ def PJM_reserves(raw_input_dir, case_dir,
 
 def load_and_run_ordc(raw_input_dir, case_dir,
                       month, hydro_cf, VOLL, lowcutLOLP, n_segments, dynamic_ORDC,
-                      datestr, primary_reserve_scalar, secondary_reserve_scalar): #this should be run from the main script, if desired, with appropriate inputs
+                      datestr, primary_reserve_scalar, secondary_reserve_scalar,
+                      MRR_method, MRRs, lfe, FOR_fe): #this should be run from the main script, if desired, with appropriate inputs
     print('running creation of new ORDC for ' + datestr)
     print('case folder is for creating ORDC is' + case_dir)
     #things to eventually pass
@@ -160,19 +161,38 @@ def load_and_run_ordc(raw_input_dir, case_dir,
     temp_df = pd.read_csv(os.path.join(case_dir,"timepoints_index_allweather.csv"),index_col=0)
     scheduled_outage_df = pd.read_csv(os.path.join(case_dir,"PJM_generators_scheduled_outage.csv"))
     
+    #and get the da forecast errors
+    
+    #create hourly load
+    hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
+    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
+    
+    da_forecast_error = lfe+FOR_fe #as decimal
+    
+    #multiply forecast error by hourly load to get reserve requirement, as appears to have been practice
+    #really this should take into account the probability of being short, but it doesn't appear historically that's what PJM did
+    hourly_loads['da_reserve_requirement'] = hourly_loads.gross_load*da_forecast_error
+    reserve_requirement_np = hourly_loads["da_reserve_requirement"].values #will give the np array
+    
+    if MRR_method:
+        print("MRR method is " + str(MRR_method) + " so will set MRR per instructions and look only at hourly marginal failure probabilities (most similar to PJM)")
+    else:
+        print("MRR method is " + str(MRR_method) + " so will evolve generator availablility through day without mins (old method)")
+    
     return create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_out_df,
                        month, hydro_cf, VOLL, lowcutLOLP, n_segments, fixed_forced_out_df, 
                        dynamic_ORDC, scheduled_outage_df, zonal_inputs,
                        init_avail_df, prob_fail_df, prob_recover_df, generator_level_outage_magnitude_df,unit_type_outage_magnitude_df,
-                       datestr, primary_reserve_scalar, secondary_reserve_scalar)
+                       datestr, primary_reserve_scalar, secondary_reserve_scalar, MRR_method, MRRs, reserve_requirement_np)
 
 
-#this is basically just a test script for getting the ORDC formulation to work
+#this is a function for getting the ORDC formulation to work
 def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_out_df,
                 month, hydro_cf, VOLL, lowcutLOLP, n_segments, fixed_forced_out_df, 
                 dynamic_ORDC, scheduled_outage_df, zonal_inputs,
                 init_avail_df, prob_fail_df, prob_recover_df, generator_level_outage_magnitude_df,unit_type_outage_magnitude_df,
-                datestr, primary_reserve_scalar, secondary_reserve_scalar):
+                datestr, primary_reserve_scalar, secondary_reserve_scalar,
+                MRR_method, MRRs, reserve_requirement_np):
     
     #check loading of new frames
     #print(init_avail_df)
@@ -187,7 +207,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     gen_type_capacity = pd.merge(gen_type_capacity, planned_out_df, on='Category')
     gen_type_capacity["Month_Capacity"]=gen_type_capacity["Capacity"]-gen_type_capacity[month]*gen_type_capacity["Capacity"]
     gen_type_capacity = gen_type_capacity.set_index("Gen_Index")
-    gen_type_capacity = gen_type_capacity.sort_values("Fuel_Cost")
+    gen_type_capacity = gen_type_capacity.sort_values("Fuel_Cost") #sorts on marginal dispatch cost
     
     #derate hydro by cf
     #hydro_cf = 0.5
@@ -202,7 +222,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     #create hourly load
     hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
     hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
-    #dec load by wind and solar to get net load
+    #dec load by wind and solar to get net load to be served by dispatchable gens
     hourly_cf = load_df.groupby("timepoint")["wind_cf","solar_cf"].mean()
     hourly_all = pd.merge(hourly_loads, hourly_cf, on="timepoint")
     #do wind
@@ -224,13 +244,27 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     zone_list = []
     temperature_list = []
     dispatch_list = []
+    w_sch_out_dispatch_list = []
+    avail_cap = []
     util_unit_list = []
-
+    
     for t in hourly_all.index.tolist():
         load = hourly_all.loc[t]["net_load"]
         merit_order_list = gen_type_capacity.index.tolist()
         for genindex in merit_order_list:
-            if load - gen_type_capacity.loc[genindex]["Month_Capacity_Derated"] < 0:
+            ###
+            #grab the utilunit to match against the other df
+            unit_util_unit = gen_type_capacity.loc[genindex]["UTILUNIT"]
+            #run a check on whether this gen is available for the hour in question
+            try:
+                init_state = init_avail_df.loc[convert_datestr_to_unavail_index(datestr)][unit_util_unit]
+            except KeyError:
+                init_state = 0 #assume a generator with no info about its initial state is fully available
+            w_sch_out_dispatch_list.append(init_state)
+            if init_state != 0:
+                dispatch = 0
+            #####
+            elif load - gen_type_capacity.loc[genindex]["Month_Capacity_Derated"] < 0:
                 dispatch = load
                 load = 0
             else:
@@ -244,6 +278,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
             temperature_list.append(matched_temperature) #need real temps here soon
             zone_list.append(gen_type_capacity.loc[genindex]["Zone"])
             dispatch_list.append(dispatch)
+            avail_cap.append(gen_type_capacity.loc[genindex]["Month_Capacity_Derated"])
             util_unit_list.append(gen_type_capacity.loc[genindex]["UTILUNIT"])
     
     hourly_stack_wtemp = pd.DataFrame({'timepoint':time_list, 
@@ -252,6 +287,8 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
                   'Zone':zone_list,
                   'Temperature': temperature_list,
                  'Dispatch':dispatch_list,
+                 'with Sch Out Dispatch': w_sch_out_dispatch_list,
+                 'avail capacity': avail_cap,
                  'UTILUNIT':util_unit_list})
     
     #append hourly prevailing pjm temperature to df
@@ -287,13 +324,22 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
         recover_prob = prob_recover_df.loc[utilunit][degree_temp]
         fail_prob = prob_fail_df.loc[utilunit][degree_temp]
         
-        if hourly_stack_wtemp.loc[index]['timepoint'] == 1:
+        if MRR_method:
+            #print('trying pjm')
+            try:
+                init_state = init_avail_df.loc[convert_datestr_to_unavail_index(datestr)][utilunit]
+            except KeyError:
+                init_state = 0 #assume a generator with no info about its initial state is fully available
+            new_forced_outage.append(enumerate_state_probs(init_state,1,recover_prob,fail_prob))
+        elif hourly_stack_wtemp.loc[index]['timepoint'] == 1:
+            #print('default')
             try:
                 init_state = init_avail_df.loc[convert_datestr_to_unavail_index(datestr)][utilunit]
             except KeyError:
                 init_state = 0 #assume a generator with no info about its initial state is fully available
             new_forced_outage.append(enumerate_state_probs(init_state,1,recover_prob,fail_prob))
         else:
+            #print('default')
             prev_FOR = new_forced_outage[index-n_gens]
             calc_FOR = prev_FOR*enumerate_state_probs(1,1,recover_prob,fail_prob) + (1-prev_FOR)*enumerate_state_probs(0,1,recover_prob,fail_prob)
             new_forced_outage.append(calc_FOR)
@@ -303,9 +349,14 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
         
         #old
         if dynamic_ORDC:
+            #this is entirely defunct from use
             match_temp = hourly_stack_wtemp.loc[index]['rounded_temp']
             match_category = hourly_stack_wtemp.loc[index]['Category']
             matched_forced_outage.append(float(forced_out_df.loc[match_category][match_temp]))
+        elif MRR_method:
+             matched_forced_outage.append(.003346) #this is strictly a placeholder and is obviously wrong, but for now in the absence of more data from Sinnott
+             #my method here is to take the unweighted capacity average failure probability  (from failure.probabilities.1845.gens.1995.2018.xRS.and.pooled.fits.050919)
+             #at the average CONUS temperature (12 degrees C; https://www.currentresults.com/Weather/US/average-annual-state-temperatures.php)
         else:
             match_category = hourly_stack_wtemp.loc[index]['Category']
             matched_forced_outage.append(float(fixed_forced_out_df.loc[match_category]['FOR']))
@@ -313,6 +364,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     hourly_stack_wtemp['GenFOR']=matched_forced_outage
     hourly_stack_wtemp['NEWFOR']=new_forced_outage
     #hourly_stack_wtemp.to_csv('temp_hour_stack.csv')
+    
     
     #manual outage dist for now but can add later
     manual_outage_dist = _np.array([[.05, 0.16887827],
@@ -342,7 +394,19 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     store_primarynonsynch_segment = []
     store_secondary_segment = []
     store_timepoint = []
+    
+    if MRR_method:
+        n_segments -= 1 #n_segments -= 1 #cut one segment since you set a MRR on the first segment
+    
     for t in list(hourly_stack_wtemp.timepoint.unique()):
+        if MRR_method:
+            #synch_val = 1500
+            store_lolp.append(VOLL) #will want to replace this will
+            store_primarysynch_segment.append(MRRs['synch'])
+            store_primarynonsynch_segment.append(MRRs['nonsynch'])
+            store_secondary_segment.append(reserve_requirement_np[t-1]) #must offset by 1 due to pythonic indexing
+            store_timepoint.append(t)
+            
     #for t in range(1,2):                
         print('original conventional dispatch for hour ' + str(t) + ' is ' + str(hourly_stack_wtemp.Dispatch[hourly_stack_wtemp.timepoint==t].sum()))
         copt_table = copt_calc(hourly_stack_wtemp[hourly_stack_wtemp.timepoint==t],manual_outage_dist,
@@ -372,7 +436,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
                 store_lolp.append(cumulative_lolp*VOLL)
                 #create ordc segments
                 #store_primarysynch_segment.append() #yikes
-                store_primarysynch_segment.append((2./.3)*seg_length*primary_reserve_scalar)
+                store_primarysynch_segment.append((2./3.)*seg_length*primary_reserve_scalar)
                 store_primarynonsynch_segment.append(seg_length*primary_reserve_scalar) #scaled by fraction of hour for now, though not exact method
                 store_secondary_segment.append(seg_length*secondary_reserve_scalar)
                 #store timepoint
@@ -380,6 +444,10 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     
     #note that synchMW is now 2/3 of non-synch, based on historic PJM practice. This means these requirements
     #are **NOT** based on the single largest contingency
+    
+    if MRR_method:
+        n_segments += 1 #add the segment that was cut earlier back in
+    
     segment_df = pd.DataFrame({'timepoint':store_timepoint,
               'segments':list(range(1,n_segments+1))*int(max(hourly_stack_wtemp.timepoint.unique())),
               'SynchMW': store_primarysynch_segment,
@@ -393,8 +461,9 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
         
     return segment_df
 
-
+###      ####        ###
 ### HELPER FUNCTIONS ###
+###      ####        ###
     
 def custom_round(x, base, addC):
     """
@@ -408,12 +477,11 @@ def custom_round(x, base, addC):
         return int(base * round(float(x)/base))
     
 
-#create copt (use RECAP functionality to see how done in python)
 def copt_calc(case_data, manual_outage_dist, gen_mag_df, unit_mag_df, is_dynamic):
     """
     Similar to how done in RECAP, but modified for our use case
     assumes df in our format, as well as outage distribution
-    returns n-by-2 numpy array of hourly capacity levels and their associated probability
+    returns n-by-2 numpy array of hourly available capacity levels and their associated probability
     """
     COPT = _np.array([1.])
 
@@ -438,7 +506,7 @@ def copt_calc(case_data, manual_outage_dist, gen_mag_df, unit_mag_df, is_dynamic
             
     COPT[_np.nonzero(COPT<0)]=0
     
-    lowprobcut = 10**(-9) #same as in RECAP
+    lowprobcut = 10**(-9) #same as in RECAP, to get rid of rounding error
     min_capacity = min(_np.nonzero(_np.cumsum(COPT)>lowprobcut)[0])
     COPT/=sum(COPT)
     
@@ -566,18 +634,28 @@ def convert_datestr_to_unavail_index(datestr):
 
 ## END HELPER FUNCTIONS ##
 
-#run internally to check if desired
+#run this script internally to check if desired
+
 '''
 month = "Jan"
 input_directory = "C:\\Users\\llavi\\Desktop\\research\\dispatch_RA-master\\raw_data"
-results_directory = "C:\\Users\\llavi\\Desktop\\research\dispatch_RA-master\\Jan2014_withORDC\\1.4.2014\\inputs"
+results_directory = "C:\\Users\\llavi\\Desktop\\research\dispatch_RA-master\\Jan_4_10_2014_PJMHistoricalwCoalSplit\\1.7.2014\\inputs"
 
+###some key inputs to overwrite
+dynamic_ORDC_input = True
+MRR_method_input = False
+###
+
+#ordc_df = load_and_run_ordc(input_directory, results_directory,
+#                                                month, hydro_cf, VOLL, lowcutLOLP, n_segments, True,
+#                                                dates[0])
 ordc_df = load_and_run_ordc(input_directory, results_directory,
-                                                month, hydro_cf, VOLL, lowcutLOLP, n_segments, True,
-                                                dates[0])
-
+                                                month, hydro_cf, VOLL, lowcutLOLP, 10, dynamic_ORDC_input,
+                                                dates[3], primary_reserve_scalar, secondary_reserve_scalar,
+                                                MRR_method_input, MRRs, lfe, FOR_fe)
 print(ordc_df)
 '''
+
 #how long?
 end_time = time.time() - start_time
 print ("time elapsed during run is " + str(end_time) + " seconds")

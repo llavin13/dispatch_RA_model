@@ -94,7 +94,8 @@ for date in dates:
     if create_supp_ordc:
         ordc_df = ordc_sandbox.load_and_run_ordc(dir_str.INPUTS_DIRECTORY, dir_str.RESULTS_DIRECTORY,
                                                 month, hydro_cf, VOLL, lowcutLOLP, n_segments, dynamic_ORDC,
-                                                date, primary_reserve_scalar, secondary_reserve_scalar)
+                                                date, primary_reserve_scalar, secondary_reserve_scalar,
+                                                MRR_method, MRRs, lfe, FOR_fe)
         ordc_df.to_csv(os.path.join(dir_str.RESULTS_DIRECTORY,"full_ordc.csv"), index=False)
     elif PJM_reserve_heuristic:
         print('you have chosen PJM heuristic reserve requirements (will be based on inputs)')

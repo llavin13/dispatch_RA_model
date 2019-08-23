@@ -508,8 +508,8 @@ dispatch_model.TotalSynchReserveConstraint = Constraint(dispatch_model.TIMEPOINT
 #dispatch_model.SpintoNonSpinRatioConstraint = Constraint(dispatch_model.TIMEPOINTS, rule=SpintoNonSpinRatioRule)
 
 def SegmentReserveRule(model,t,s):
-    return model.segmentreserves[t,s] >= model.SynchMW[t,s] #implements as hard constraint
-    #return model.SynchMW[t,s] >= model.segmentreserves[t,s] #penalty facor constraint must be linked with objective function
+    #return model.segmentreserves[t,s] >= model.SynchMW[t,s] #implements as hard constraint
+    return model.SynchMW[t,s] >= model.segmentreserves[t,s] #penalty facor constraint must be linked with objective function
 dispatch_model.SegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=SegmentReserveRule)
 
 ## TOTAL PRIMARY NON-SYNCH RESERVES HELD ##
@@ -582,6 +582,7 @@ def objective_rule(model):
     return sum(sum(sum(sum(model.segmentdispatch[t,g,z,gs] for z in model.ZONES) for t in model.TIMEPOINTS)*model.generatormarginalcost[g,gs] for g in model.GENERATORS) for gs in model.GENERATORSEGMENTS)+\
            sum(sum(model.commitment[t,g] for t in model.TIMEPOINTS)*model.noloadcost[g] for g in model.GENERATORS)+\
            sum(sum(model.startup[t,g] for t in model.TIMEPOINTS)*model.startcost[g] for g in model.GENERATORS)-\
+           sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
            sum(sum(model.price[t,s]*model.nonsynchsegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
            sum(sum(model.price[t,s]*model.secondarysegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
            sum(sum(model.price[t,s]*model.subzonesegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
