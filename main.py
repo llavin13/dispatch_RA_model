@@ -51,10 +51,10 @@ cwd = os.getcwd()
 ## CREATE LINKED SCENARIO OVER MULTIPLE DAYS ##
 #enter this as a list of tuples (probably can automate this / connect to case_inputs.py at some point)
 #scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),
-scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),
-                ("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
-                ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),
-                ("1.10.2014",True,"1.9.2014")] 
+#scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),
+#                 ("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
+#                 ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),
+#                ("1.10.2014",True,"1.9.2014")] 
 #scenario_list = [("1.5.2014",True,"1.4.2014")]
 #scenario_list = [("TOY",False,"")]
 #scenario_list = [("10.19.2017",False,"")]
@@ -63,11 +63,12 @@ scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),
 #scenario_list = [("10.20.2017.nordc",True,"10.19.2017.nordc"),("10.21.2017.nordc",True,"10.20.2017.nordc"),
 #                 ("10.22.2017.nordc",True,"10.21.2017.nordc"),("10.23.2017.nordc",True,"10.22.2017.nordc"),
 #                 ("10.24.2017.nordc",True,"10.23.2017.nordc"),("10.25.2017.nordc",True,"10.24.2017.nordc")]
-#scenario_list = [("10.19.2017",False,""),
-#                 ("10.20.2017",True,"10.19.2017"),("10.21.2017",True,"10.20.2017"),
-#                 ("10.22.2017",True,"10.21.2017")]
-#,("10.23.2017",True,"10.22.2017"),
-#                 ("10.24.2017",True,"10.23.2017"),("10.25.2017",True,"10.24.2017")]
+#
+#scenario_list = [("10.19.2017",False,""),("10.20.2017",True,"10.19.2017")]
+scenario_list = [("10.19.2017",False,""),("10.20.2017",True,"10.19.2017"),
+                 ("10.21.2017",True,"10.20.2017"),("10.22.2017",True,"10.21.2017"),
+                 ("10.23.2017",True,"10.22.2017"),("10.24.2017",True,"10.23.2017"),
+                 ("10.25.2017",True,"10.24.2017")]
 
 # Allow user to specify solver path if needed (default assumes solver on path)
 executable=""
@@ -142,11 +143,19 @@ def create_problem_instance(scenario_inputs_directory, load_init, scenario_from_
 
     return instance
 
-def solve(instance):
+def solve(instance, case_type):
     """
     Select solver for the problem instance
     Run instance of model
     """
+    #Choose active/inactive objective
+    if case_type == "MIP":
+        instance.TotalCost2.deactivate() #deactivates the simple objective
+    elif case_type == "LP":
+        instance.TotalCost2.activate()
+        instance.TotalCost.deactivate() #switch objective to exclude start-up and no-load costs
+        instance.BindSegmentReserveConstraint.deactivate()
+        instance.PminConstraint.deactivate()
     # ### Solve ### #
     if executable != "":
         solver = SolverFactory("cplex", executable=executable)
@@ -161,6 +170,7 @@ def solve(instance):
     
     try:
         solution = solver.solve(instance, tee=True, keepfiles=False)
+
         #solution = solver.solve(instance, tee=True, keepfiles=False, options={'optimalitytarget':1e-5})
     except PermissionError:
         print("Yuck, a permission error")
@@ -170,7 +180,7 @@ def solve(instance):
             file_path.close()
             time.sleep(1)
             os.remove(file)
-        return solve(instance)
+        return solve(instance, case_type)
     
     return solution
 
@@ -203,17 +213,17 @@ def run_scenario(directory_structure, load_init):
     # Create a 'dual' suffix component on the instance, so the solver plugin will know which suffixes to collect
     #instance.dual = Suffix(direction=Suffix.IMPORT)
     
-    # Solve
-    solution = solve(instance)
+    solution = solve(instance,"MIP") #solve MIP with commitment
 
     print ("Done running MIP, relaxing to LP to obtain duals...")
-    
-    instance.commitment.fix() #fix binary variables to relax to LP
+     
+    #fix binary variables to relax to LP
+    instance.commitment.fix()
     instance.startup.fix() 
     instance.shutdown.fix()
     instance.preprocess()   
     instance.dual = Suffix(direction=Suffix.IMPORT) 
-    solution = solve(instance)   #solve LP and print dual
+    solution = solve(instance,"LP") 
     
     # export results to csv
     write_results.export_results(instance, solution, scenario_results_directory, debug_mode=1)

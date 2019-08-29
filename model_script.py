@@ -512,6 +512,10 @@ def SegmentReserveRule(model,t,s):
     return model.SynchMW[t,s] >= model.segmentreserves[t,s] #penalty facor constraint must be linked with objective function
 dispatch_model.SegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=SegmentReserveRule)
 
+def BindSegmentReserveRule(model,t,s):
+    return model.segmentreserves[t,s] >= model.SynchMW[t,s]
+dispatch_model.BindSegmentReserveConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, rule=BindSegmentReserveRule)
+
 ## TOTAL PRIMARY NON-SYNCH RESERVES HELD ##
 
 def TotalNonSynchReserveRule(model,t):
@@ -587,6 +591,8 @@ def objective_rule(model):
            sum(sum(model.price[t,s]*model.secondarysegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
            sum(sum(model.price[t,s]*model.subzonesegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
            sum(sum(model.hurdle_rate[t, line]*model.transmit_power_MW[t, line] for line in model.TRANSMISSION_LINE) for t in model.TIMEPOINTS)
+    #sum(sum(model.commitment[t,g] for t in model.TIMEPOINTS)*model.noloadcost[g] for g in model.GENERATORS)+\
+    #sum(sum(model.startup[t,g] for t in model.TIMEPOINTS)*model.startcost[g] for g in model.GENERATORS)-\
     #sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
     #sum(sum(model.price[t,s]*model.subzonesegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
     #sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
@@ -598,6 +604,26 @@ def objective_rule(model):
     #(4)-(6) utility of reserve demand
     #(7) hurdle rates on use of Tx lines
 dispatch_model.TotalCost = Objective(rule=objective_rule, sense=minimize)
+
+def objective_rule2(model): 
+    #min dispatch cost for objective
+    return sum(sum(sum(sum(model.segmentdispatch[t,g,z,gs] for z in model.ZONES) for t in model.TIMEPOINTS)*model.generatormarginalcost[g,gs] for g in model.GENERATORS) for gs in model.GENERATORSEGMENTS)-\
+           sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+           sum(sum(model.price[t,s]*model.nonsynchsegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+           sum(sum(model.price[t,s]*model.secondarysegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+           sum(sum(model.price[t,s]*model.subzonesegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
+           sum(sum(model.hurdle_rate[t, line]*model.transmit_power_MW[t, line] for line in model.TRANSMISSION_LINE) for t in model.TIMEPOINTS)
+    #sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+    #sum(sum(model.price[t,s]*model.subzonesegmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)+\
+    #sum(sum(model.price[t,s]*model.segmentreserves[t,s] for s in model.SEGMENTS) for t in model.TIMEPOINTS)-\
+    #return(sum(sum(sum(model.dispatch[t,g,z] for z in model.ZONES) for t in model.TIMEPOINTS)*model.fuelcost[g] for g in model.GENERATORS) +\
+    #DESCRIPTION OF OBJECTIVE
+    #(1) dispatch cost
+    #(2) no load cost of committed gen
+    #(3) start up costs when generators brought online
+    #(4)-(6) utility of reserve demand
+    #(7) hurdle rates on use of Tx lines
+dispatch_model.TotalCost2 = Objective(rule=objective_rule2, sense=minimize)
 
 end_time = time.time() - start_time
 print ("time elapsed during run is " + str(end_time) + " seconds")
