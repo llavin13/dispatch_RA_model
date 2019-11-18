@@ -72,13 +72,35 @@ def load_data(inputs_directory, scenario_inputs_directory, date):
     #load line flow data
     line_limits = pd.read_csv(os.path.join(inputs_directory,"da_interface_flows_and_limits_full.csv"))
     
-    print('end loading data, begin cleaning data...')
+    #load CEMS data for calculating min up/down times
+    #could eventually be used for emissions factors
+    #added 10.29.19
+    cems_data = pd.read_csv(os.path.join(inputs_directory,'Lavin_RFC_Hourly_2014.txt'), delimiter="\t")
+    
+    #load info on contract status of gas plants from Gerad (added here 10.29.19)
+    eia_923_firmgas = pd.read_csv(os.path.join(inputs_directory,'FractionFirmTable1222019.csv'))
+    
+    #load info on dual-fuel capability of gas plants from Gerad (added here 11.15.19)
+    dual_fuel = pd.read_csv(os.path.join(inputs_directory,'PJM.unit.attributes.dual.LDC.11122019.csv'))
+    
     
     #create cleaning dates
     startdate = parser.parse(date)
     enddate = startdate + timedelta(days, hours=-1)
     enddate_max = startdate + timedelta(math.ceil(days), hours=-1) #use only for things that need to look through whole day
     enddate_min = startdate + timedelta(1,hours=-1) #always just the same day
+    
+    #also month and year
+    month = enddate.month
+    year = enddate.year
+    
+    #EIA 923, csvs are split by year in their own special subfolder so wait until here to do it
+    eia_inputs_directory = inputs_directory+"\\EIA923"
+    eia_xlsx_name = "EIA923_Schedules_2_3_4_5_M_12_"+str(year)+"_Final_Revision.xlsx"
+    eia_923_full = pd.read_excel(os.path.join(eia_inputs_directory,eia_xlsx_name), sheet_name='Page 5 Fuel Receipts and Costs', header=4)
+    #print(eia_923_full.head())
+    
+    print('end loading data, begin cleaning data...')
     
     #clean hydro params
     clean_hydro_params = hydro_param_clean(hydro_params, startdate+timedelta(0,hours=1), enddate+timedelta(0,hours=1))
@@ -141,15 +163,29 @@ def load_data(inputs_directory, scenario_inputs_directory, date):
     #this is the part that's taking the longest, so work on it at some point
     loadMW = loads_time_clean(loads, startdate+timedelta(0,hours=1), enddate+timedelta(0,hours=1))
     
+    #clean CEMS data
+    min_up_down_df = clean_cems(cems_data,'ORISPL')
+    
+    #clean EIA firmgas data
+    eia_firmgas_df = clean_eia(eia_923_firmgas,month,year)
+    
+    #clean EIA 923 data
+    eia_923_df = clean_923(eia_923_full,month)
+    
+    #printing to just quick check for now
+    #print(min_up_down_df.head())
+    #print(eia_923_df.head())
+    
     # summarize base_inputs for use later (note: could simplify now that inputs are via script in case_inputs.py)
     base_inputs = pd.DataFrame({"value":[date, days, wfe, sfe, lfe, zones, n_segments, VOLL, contingency, lowcutLOLP, hydro_cf, n_generator_segments]},
                                index= ["Begin Date", "Duration", "Wind forecast error", "Solar forecast error", "Load forecast error",
                                        "Zones", "Demand Curve Segments", "VOLL", "Contingency Reserve Shed", "lowcutLOLP", "hydrocf", "n_generator_segments"])
     
-    print('...return loaded and cleaned data')
+    print('...return loaded and cleaned data as tuple')
     return (base_inputs, forced_outage_rates, gens, loadMW[0], temperatures, wind, solar, loadMW[1], 
             clean_line_limits, wind_capacity, solar_capacity, clean_scheduled_outages, hydro_derates,
-            clean_gas_hub_prices, clean_zonal_loads, clean_hydro_params)
+            clean_gas_hub_prices, clean_zonal_loads, clean_hydro_params, min_up_down_df, eia_firmgas_df,
+            eia_923_df, dual_fuel)
 
 def str_to_datetime(my_str):
     '''
@@ -256,7 +292,113 @@ def hydro_param_clean(hydro_df, startdate, enddate):
     clean_hydro_df = hydro_df
     clean_hydro_df['date']=clean_hydro_df.index
     return clean_hydro_df[(clean_hydro_df.date.apply(str_to_datetime) >= startdate) & (enddate >= clean_hydro_df.date.apply(str_to_datetime))]
+
+def clean_cems(cems_df,col_name):
+    '''
+    '''
+    assert(col_name=='ORISPL')
+    gens_oris_unique = cems_df[str(col_name)].unique()
+    oris_code_list = []
+    min_up_list = []
+    min_down_list = []
+    cap_compare = []
     
+    for g in gens_oris_unique: #for each unique generator in RFC, determine min online time
+
+        subframe = cems_df.loc[cems_df[col_name]==g] #df.loc[df['shield'] > 6]'
+        subframe.reset_index(inplace=True)
+        min_down = 8760
+        min_up = 8760
+        
+        min_up_calc = 0
+        min_down_calc = 0
+        flag = 'down'
+  
+        for h in subframe.index:
+            if h==subframe.index[0]:
+                if subframe.loc[h,'grossloadmw']>=0.0:
+                    flag = 'up'
+                    min_up_calc += 1
+                else:
+                        min_down_calc += 1
+            else:    
+                if subframe.loc[h,'grossloadmw']>=0.0 and subframe.loc[h-1,'grossloadmw']>=0.0:
+                    #print(h)
+                    min_up_calc += 1
+                elif math.isnan(subframe.loc[h,'grossloadmw']) and math.isnan(subframe.loc[h-1,'grossloadmw']):
+                    min_down_calc+=1
+                elif subframe.loc[h,'grossloadmw']>=0.0 and math.isnan(subframe.loc[h-1,'grossloadmw']):
+                    #print(h)
+                    flag = 'up'
+                    min_up_calc=1
+                    if min_down_calc < min_down:
+                        min_down = min_down_calc
+                    min_down_calc = 0
+                elif math.isnan(subframe.loc[h,'grossloadmw']) and subframe.loc[h-1,'grossloadmw']>=0.0:
+                    flag='down'
+                    min_down_calc=1
+                    if min_up_calc < min_up:
+                        min_up = min_up_calc
+                    min_up_calc = 0
+    
+        oris_code_list.append(g)
+        min_up_list.append(min_up)
+        min_down_list.append(min_down)
+        cap_compare.append(subframe.loc[0,'nameplatecap'])
+
+    #create output dataframe
+    min_up_down_df = pd.DataFrame(list(zip(oris_code_list, min_up_list, min_down_list,cap_compare)), 
+                                  columns =['ORISPL', 'MinUp','MinDown','Nameplate_CEMs']) 
+    
+    return min_up_down_df
+
+def clean_eia(df, month, year):
+    '''
+    '''
+    datetime_list = list(df['DateTime']) 
+    df.drop('DateTime',axis=1,inplace=True)
+    cols_list = []
+    oris_list = []
+
+    for c in df.columns:
+        cols_list += list(df[c]) 
+        c_list = [c]*len(df[c])
+        oris_list += c_list
+
+    datetime_list = datetime_list * len(df.columns)
+
+    #zip up new df
+    eia_923_stack_df = pd.DataFrame(list(zip(datetime_list, oris_list, cols_list)), 
+                                    columns =['DateTime', 'ORISPL','FirmBool']) 
+
+    #add column with month and year for future cleaning if desired
+    month_list = []
+    year_list = []
+    for i in eia_923_stack_df.index:
+        datetime = parser.parse(eia_923_stack_df.loc[i,'DateTime'])
+        month_list.append(datetime.month)
+        year_list.append(datetime.year)
+    
+    eia_923_stack_df['month'] = month_list
+    eia_923_stack_df['year'] = year_list
+    
+    eia_month_df = eia_923_stack_df[(eia_923_stack_df['year']==year) & (eia_923_stack_df['month']==month)]
+    
+    #gas_df_oris_group.loc[:,'ORISPL']
+    for i in eia_month_df.index:
+        eia_month_df.loc[i,'ORISPL']=np.int64(eia_month_df.loc[i,'ORISPL']) #convert to np.int64 for matching
+    #eia_month_df['ORISPL'].astype(np.int64)
+    
+    return eia_month_df
+
+def clean_923(df,month):
+    '''
+    takes loaded eia 923 df (read in sheet 5 above) and month and retains only contracts from that month
+    also cleans out entries without contract data
+    '''
+    df_month = df[df['MONTH']==int(month)]
+    df_monthandfuelclean = df_month[df_month['FUEL_COST']!="."]
+    return df_monthandfuelclean
 
 def input_to_pickle(data_path, csv_string):
     '''

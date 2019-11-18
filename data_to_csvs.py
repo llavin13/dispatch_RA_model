@@ -395,6 +395,113 @@ def create_zone_assign_col(row):
         val = 1
     return val
 
+def modify_min_up_down(orig_df, modifying_df):
+    '''
+    takes (1) dataframe of generator characteristics, and
+    (2) dataframe of empirical min up/down times calculated from 2014 CEMS data provided by N. Muller
+    
+    returns modified df where matched ORIS code generators have their min up and down modified
+    '''
+    #match with oris codes, get unit type
+    orig_df['index'] = orig_df.index #add index as col
+    merged_up_down = orig_df.merge(modifying_df, left_on='ORISPL_x', right_on='ORISPL')
+    merged_up_down.set_index('index',inplace=True)
+    #print(merged_up_down.index)
+    
+    new_min_up = []
+    new_min_down = []
+    
+    #do I also want to aggregate on unit type and assign that when unk?
+    for i in orig_df.index:
+        if i not in list(merged_up_down.index):
+            #print(i)
+            new_min_up.append(orig_df.loc[i]['minup'])
+            new_min_down.append(orig_df.loc[i]['mindown'])
+        else:
+            up_val = min(merged_up_down.loc[i]['minup'],merged_up_down.loc[i]['MinUp'])
+            new_min_up.append(up_val)
+        
+            down_val = min(merged_up_down.loc[i]['mindown'],merged_up_down.loc[i]['MinDown'])
+            new_min_down.append(down_val)
+    
+    out_df = orig_df
+    out_df['final_minup'] = new_min_up
+    out_df['final_mindown'] = new_min_down    
+    
+    #print(out_df.head())
+    
+    return out_df
+
+def reassign_fuel_costs(df,fuelcostcol,eia923df,gasprice_df):
+    new_fuel_costs = []
+    
+    df_noDR = df[df['ID6_y']!='NA'] #get rid of DR
+    
+    merged_df = pd.merge(df_noDR,eia923df,how='left',left_on='ORISPL_x',right_on='Plant Id')
+    #print(merged_df.columns)
+    
+    ## coal grouper ##
+    st1_ids = merged_df.index[(merged_df['FUEL_GROUP']=='Coal') & (merged_df['ID6_y']=='ST1')]
+    st2_ids = merged_df.index[(merged_df['FUEL_GROUP']=='Coal') & (merged_df['ID6_y']=='ST2')]
+    coal_ids = list(st1_ids)+list(st2_ids)
+    coal_df = merged_df.loc[coal_ids,:]
+    coal_df_oris_group = coal_df.groupby(['ORISPL_y','STATE','Plant Name','Purchase Type','FUEL_GROUP','FUEL_COST','Regulated'],as_index=False).mean()
+    coal_df_oris_group['$TOTAL_PAYMENT'] = coal_df_oris_group['FUEL_COST']*coal_df_oris_group['QUANTITY']*.01 #total pmt
+    coal_df_oris_only = coal_df_oris_group.groupby(['ORISPL_y']).sum() #group on ORISPL ONLY
+    #calculate avg price at oris level
+    coal_df_oris_only['coal_price_per_mmbtu'] = coal_df_oris_only['$TOTAL_PAYMENT']/coal_df_oris_only['QUANTITY']
+    #also create a frame that groups on state for later use
+    coal_df_state = coal_df_oris_group.groupby(['STATE']).sum()
+    coal_df_state['state_avg_$mmbtu'] = coal_df_state['$TOTAL_PAYMENT']/coal_df_state['QUANTITY']
+    
+    ## gas grouper ##
+    cc_ids = merged_df.index[(merged_df['FUEL_GROUP']=='Natural Gas') & (merged_df['ID6_y']=='CC')]
+    ct_ids = merged_df.index[(merged_df['FUEL_GROUP']=='Natural Gas') & (merged_df['ID6_y']=='CT')]
+    gas_ids = list(cc_ids)+list(ct_ids)
+    gas_df = merged_df.loc[gas_ids,:]
+    
+    if 'Natural Gas Transportation Service' in gas_df.columns:
+        gas_transport_string = 'Natural Gas Transportation Service'
+    elif 'Natural Gas Delivery Contract Type':
+        gas_transport_string = 'Natural Gas Delivery Contract Type'
+    else:
+        print('ugh,again!')
+    
+    gas_df_oris_group = gas_df.groupby(['ORISPL_y','STATE','Plant Name','Purchase Type','FUEL_GROUP','FUEL_COST','Regulated',gas_transport_string],as_index=False).mean()
+    gas_df_oris_group['$TOTAL_PAYMENT'] = gas_df_oris_group['FUEL_COST']*gas_df_oris_group['QUANTITY']*.01 #total pmt
+    gas_df_oris_only = gas_df_oris_group.groupby(['ORISPL_y']).sum() #group on ORISPL ONLY
+    #calculate avg price at oris level
+    gas_df_oris_only['gas_price_per_mmbtu'] = gas_df_oris_only['$TOTAL_PAYMENT']/gas_df_oris_only['QUANTITY']
+    #also create a frame that groups on state for later use
+    gas_df_state = gas_df_oris_group.groupby(['STATE']).sum()
+    gas_df_state['state_avg_$mmbtu'] = gas_df_state['$TOTAL_PAYMENT']/gas_df_state['QUANTITY']
+    
+    #print(gas_df_state)
+    #print(gas_df_oris_only)
+    
+    for i in df.index:
+        if df.loc[i,'new_ID']=='ST1' or df.loc[i,'new_ID']=='ST2':
+            if df.loc[i,'ORISPL_y'] in coal_df_oris_only.index:
+                new_price = coal_df_oris_only.loc[df.loc[i,'ORISPL_y'],'coal_price_per_mmbtu']
+            elif df.loc[i,'STATE'] in coal_df_state.index:
+                new_price = coal_df_state.loc[df.loc[i,'STATE'],'state_avg_$mmbtu']
+            else:
+                new_price = coal_df_state.loc['VA','state_avg_$mmbtu']
+            new_fuel_costs.append(new_price)
+        elif df.loc[i,'new_ID']=='CC' or df.loc[i,'new_ID']=='CT':
+            if df.loc[i,'ORISPL_y'] in gas_df_oris_only.index:
+                new_price = gas_df_oris_only.loc[df.loc[i,'ORISPL_y'],'gas_price_per_mmbtu']
+            elif df.loc[i,'STATE'] in gas_df_state.index:
+                new_price = gas_df_state.loc[df.loc[i,'STATE'],'state_avg_$mmbtu']
+            else: #in the case of gas, prefer to assign prevailing hub price here for unobserved states
+                hub = df.loc[i,'assigned_gashub']
+                new_price = gasprice_df.loc[hub]['DeliveryPrice']
+            new_fuel_costs.append(new_price)
+        else:
+            new_fuel_costs.append(df.loc[i,'FuelCost'])
+              
+    return new_fuel_costs
+
 ## DUMP TO OUTPUT FILES ##
 
 def write_data(data, results_directory, init, scenario_inputs_directory, date, inputs_directory,
@@ -422,30 +529,99 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
     #rewrite using gas price data
     print("re-doing gas prices")
     gasprice_data = data[13]
+    is_firm = data[17] #new
+    eia_923_data = data[18]
+    dual_fuel = data[19]
     
     #print(gasprice_data)
+    #print(gasprice_data.columns)
+    #print(is_firm)
+    #print(is_firm.columns)
+    #print(eia_923_data)
+    #print(eia_923_data.columns)
+    #print(dual_fuel)
+    #print(dual_fuel.columns)
     
-    #add delivery charge to the data
+    
+    #join data on whether firm contract is held
+    #print(gasprice_data)
+    
+    #add delivery charge to the original data
     delivery = 0.4 #in $/mmbtu
     gasprice_data['DeliveryPrice'] = gasprice_data['Wtd Avg Index $'] + delivery
+    
+    #gasprice_data.to_csv(os.path.join(inputs_directory,'gasprice.csv'),index=False)
+    #eia_923_data.to_csv(os.path.join(inputs_directory,'eia923.csv'),index=False)
+    #dual_fuel.to_csv(os.path.join(inputs_directory,'dualfuel.csv'),index=False)
     
     #initial load of the zone match file, though we'll use only for gas prices here
     zone_file = pd.read_csv(os.path.join(scenario_inputs_directory,"LDA_to_zone.csv"))
     gens_w_zone = pd.merge(merged_gens, zone_file, on='ZONE')
     gens_w_zone = gens_w_zone.sort_values('X')
+    #print(gens_w_zone.head())
+    
+    gens_w_zone['index'] = gens_w_zone.index #add index as col
+    gens_w_zone_and_firm = gens_w_zone.merge(is_firm, left_on='ORISPL_x', right_on='ORISPL')
+    gens_w_zone_and_firm.set_index('index',inplace=True)
     
     # replace gas generators fuel cost with hub price
     #it'll be slow but do as an iterated list for now
+    
+    
+    #actually another thing I may use is diesel fuel price, so note that
+    
+    diesel_fuel_cost = gens_w_zone['FuelCost'][gens_w_zone['ID6_y']=="DS"].mean()
+    #print(diesel_fuel_cost)
+    #print('some info on dates!')
+    #print(date)
+    #print(type(date))
+    #print('end info on dates')
+    
+    '''
     new_fuel_price = []
     for g in gens_w_zone.index:
         if gens_w_zone.loc[g]['ID6_y'] == 'CC' or gens_w_zone.loc[g]['ID6_y'] == 'CT':
+            fuel_flag = False
+            if g in list(gens_w_zone_and_firm.index):
+                firmbool = gens_w_zone_and_firm.loc[g]['FirmBool']
+                if math.isnan(float(firmbool)):
+                    fuel_flag = False
+                elif float(firmbool)>=0.1: #flag as don't use spot price if firm contract is held for gas plant
+                    #fuel_flag=False
+                    fuel_flag = True
+                else: #known that generator holds interruptible contract
+                    #fuel_flag=True
+                    fuel_flag = False
             hub = gens_w_zone.loc[g]['assigned_gashub']
-            fuel_price = gasprice_data.loc[hub]['DeliveryPrice']
+            if fuel_flag: #this is the default options
+                fuel_price = gasprice_data.loc[hub]['DeliveryPrice']
+            else: #for the exception
+                #fuel_price = gens_w_zone.loc[g]['FuelCost']
+                #take oil price if higher than gas price, otherwise gas price
+                #this REALLY should ONLY bind on select days with gas delivery problems
+                #known examples are 1.6.2014-1.8.2014
+                fuel_price = max(diesel_fuel_cost,gens_w_zone.loc[g]['FuelCost'])
             new_fuel_price.append(fuel_price)
         else:
             new_fuel_price.append(gens_w_zone.loc[g]['FuelCost'])
+    '''
     
+    new_lab = []
+    for i in gens_w_zone.index:
+        new_lab.append(gens_w_zone.loc[i,'ID6_y'])
+        #if gens_w_zone.loc[i,'ID6_y']=='ST1':
+        #    new_lab.append('CT')
+        #else:
+        #    new_lab.append(gens_w_zone.loc[i,'ID6_y'])
+    gens_w_zone['new_ID'] = new_lab
+    new_fuel_price = reassign_fuel_costs(gens_w_zone,'FuelCost',eia_923_data, gasprice_data)
+    #line_df.to_csv(os.path.join(results_directory,"transmission_lines.csv"), index=False)
+    #gens_w_zone.to_csv(os.path.join(inputs_directory,'gens_before_fuelchange.csv'),index=False)
     gens_w_zone['FuelCost'] = new_fuel_price #replaces old fuel costs with new fuel costs
+    #print(len(new_fuel_price))
+    #print(len(gens_w_zone.index))
+    #gens_w_zone.to_csv(os.path.join(inputs_directory,'gens_after_fuelchange.csv'),index=False)
+    #print(gens_w_zone['FuelCost'])
     print("finished re-doing gas prices")
     
     '''
@@ -470,8 +646,14 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
     gens_w_zone['marginalcost'] = gens_w_zone.FuelCost * gens_w_zone.GEN_HEATRATE + gens_w_zone.NREL_V_OM
     gens_w_zone['noloadcost'] = gens_w_zone.NO_LOAD_MMBTU * gens_w_zone.FuelCost
     gens_w_zone = gens_w_zone.sort_values('X')
-    pjm_out = gens_w_zone[['UNITNAME','marginalcost','Pmin','startcost','can_spin','can_nonspin','minup','mindown','noloadcost']]
+    #pjm_out = gens_w_zone[['UNITNAME','marginalcost','Pmin','startcost','can_spin','can_nonspin','minup','mindown','noloadcost']]
+    #pjm_out.columns = ['Gen_Index',	'Fuel_Cost	','Pmin','start_cost','Can_Spin','Can_NonSpin','Min_Up','Min_Down','No_Load_Cost']
+    ## ##
+    pjm_out_new = modify_min_up_down(gens_w_zone,data[16])
+    #final_minup
+    pjm_out = pjm_out_new[['UNITNAME','marginalcost','Pmin','startcost','can_spin','can_nonspin','final_minup','final_mindown','noloadcost']]
     pjm_out.columns = ['Gen_Index',	'Fuel_Cost	','Pmin','start_cost','Can_Spin','Can_NonSpin','Min_Up','Min_Down','No_Load_Cost']
+    ## ##
     pjm_out.to_csv(os.path.join(results_directory,"PJM_generators.csv"), index=False)
     
     if init:

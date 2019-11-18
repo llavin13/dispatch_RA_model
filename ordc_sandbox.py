@@ -363,7 +363,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
             
     hourly_stack_wtemp['GenFOR']=matched_forced_outage
     hourly_stack_wtemp['NEWFOR']=new_forced_outage
-    #hourly_stack_wtemp.to_csv('temp_hour_stack.csv')
+    #hourly_stack_wtemp.to_csv('stack_dispatch.csv')
     
     
     #manual outage dist for now but can add later
@@ -411,6 +411,9 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
         print('original conventional dispatch for hour ' + str(t) + ' is ' + str(hourly_stack_wtemp.Dispatch[hourly_stack_wtemp.timepoint==t].sum()))
         copt_table = copt_calc(hourly_stack_wtemp[hourly_stack_wtemp.timepoint==t],manual_outage_dist,
                                generator_level_outage_magnitude_df,unit_type_outage_magnitude_df,dynamic_ORDC)
+        #if t==1:
+            #copt_df = pd.DataFrame(copt_table)
+            #copt_df.to_csv("copt_t1.csv")
         #hourly_copt_list.append(copt_calc(hourly_stack_wtemp[hourly_stack_wtemp.timepoint==t],manual_outage_dist))
         
         #lowcut_lolp = .00001 #cutoff lolp for min segment, probably want to do this as input but OK for now
@@ -635,12 +638,11 @@ def convert_datestr_to_unavail_index(datestr):
 ## END HELPER FUNCTIONS ##
 
 #run this script internally to check if desired
-
 '''
+
 month = "Jan"
 input_directory = "C:\\Users\\llavi\\Desktop\\research\\dispatch_RA-master\\raw_data"
-results_directory = "C:\\Users\\llavi\\Desktop\\research\dispatch_RA-master\\Jan_4_10_2014_PJMHistoricalwCoalSplit\\1.7.2014\\inputs"
-
+results_directory = "C:\\Users\\llavi\\Desktop\\research\dispatch_RA-master\\Jan_4_10_2014_DynamicORDC\\1.4.2014\\inputs"
 ###some key inputs to overwrite
 dynamic_ORDC_input = True
 MRR_method_input = False
@@ -651,11 +653,12 @@ MRR_method_input = False
 #                                                dates[0])
 ordc_df = load_and_run_ordc(input_directory, results_directory,
                                                 month, hydro_cf, VOLL, lowcutLOLP, 10, dynamic_ORDC_input,
-                                                dates[3], primary_reserve_scalar, secondary_reserve_scalar,
+                                                dates[0], primary_reserve_scalar, secondary_reserve_scalar,
                                                 MRR_method_input, MRRs, lfe, FOR_fe)
 print(ordc_df)
-'''
+
 
 #how long?
 end_time = time.time() - start_time
 print ("time elapsed during run is " + str(end_time) + " seconds")
+'''

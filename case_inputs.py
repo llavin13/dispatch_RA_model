@@ -8,15 +8,16 @@ Created on Thu Apr 18 08:46:48 2019
 
 #scenario_name = "TEST2" cases are now named below based on their corresponding date
 #case_folder = "Oct_19_25_2017_SimpleORDCMRR"
-case_folder = "Oct_19_25_2017_PJMDynORDColdOct28updatedmpinrelaxetc"
+case_folder = "Jan_4_10_2014_ftrialing_st1switch" #Jan_4_10_2014_base_30pcttx
 #then do one where change SUC of CTs
 #case_folder = "TOYCASE"
 
 # initialization boolean list should match length of dates
-#make_init_list = [True]
-make_init_list = [True, False, False, False, False, False, False]
+make_init_list = [True]
+#make_init_list = [True, False, False, False, False, False, False]
+#make_init_list = [True, False, False, False, False, False, False]
 
-create_supp_ordc = True #this chooses whether to create ORDC
+create_supp_ordc = False #this chooses whether to create ORDC
 
 #if create_supp_ordc=False, chooses whether to use PJM heuristic or NO reserves
 PJM_reserve_heuristic = True
@@ -32,16 +33,16 @@ MRR_method = False
 MRRs = {'synch':1400,'nonsynch':2100} #secondary minimum reserve requirements will be based on forecast error inputs 
 
 #where to pull hydro data
-#hydro_sheet = "PJM.hydro.gen.jan.2014"
-hydro_sheet = "PJM.hydro.gen.oct.2017"
+hydro_sheet = "PJM.hydro.gen.jan.2014"
+#hydro_sheet = "PJM.hydro.gen.oct.2017"
 
 #generator segment pieces
 n_generator_segments = 4
 
 #(1) specify dates to run in list (note: each day is run separately)
-#dates = ['10.19.2017']
-#dates = ['1.9.2014','1.10.2014']
-dates = ['10.19.2017', '10.20.2017','10.21.2017', '10.22.2017','10.23.2017', '10.24.2017', '10.25.2017']
+dates = ['10.19.2017']
+#dates = ['1.4.2014','1.5.2014','1.6.2014','1.7.2014','1.8.2014','1.9.2014','1.10.2014']
+#dates = ['10.19.2017', '10.20.2017','10.21.2017', '10.22.2017','10.23.2017', '10.24.2017', '10.25.2017']
 #dates = ['1.4.2014','1.5.2014','1.6.2014','1.7.2014','1.8.2014','1.9.2014','1.10.2014']
 #(2) hydro cf
 hydro_cf = 0.3
