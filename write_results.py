@@ -198,9 +198,9 @@ def export_zonal_price(instance, timepoints_set, zones_set, ordc_segments_set, r
         recorded_timepoints = []
         for t in timepoints_set:
             for s in ordc_segments_set:
-                if instance.SynchMW[t,s]-instance.segmentreserves[t,s].value > 0.1:
+                if instance.SynchMW[t,s].value-instance.segmentreserves[t,s].value > 0.1:
                     if t not in recorded_timepoints:
-                        results_penalty_factors.append(instance.price[t,s])
+                        results_penalty_factors.append(instance.price[t,s].value)
                         recorded_timepoints.append(t)
                 elif s == max(ordc_segments_set):
                     results_penalty_factors.append(0)

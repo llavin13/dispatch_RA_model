@@ -502,6 +502,58 @@ def reassign_fuel_costs(df,fuelcostcol,eia923df,gasprice_df):
               
     return new_fuel_costs
 
+def redo_capacity_HR(gens_df,epa_df):
+    
+    #add a column for capacity-weighted HR contribution in epa_df
+    matcher = epa_df.groupby("ORIS Plant Code")["Capacity (MW)"].sum()
+
+    newcapacity = []
+    for i in epa_df.index:
+        origcap = epa_df.loc[i,'Capacity (MW)']
+        capsum = matcher[epa_df.loc[i,'ORIS Plant Code']]
+        newcapacity.append(origcap/capsum)
+    epa_df['capacityfraction'] = newcapacity
+    epa_df['HRcontribution'] = epa_df['capacityfraction']*epa_df['Heat Rate (Btu/kWh)']
+    epa_oris_group_sum = epa_df.groupby(['ORIS Plant Code']).sum()
+    epa_oris_group_sum_relevantcols = epa_oris_group_sum[['Capacity (MW)','HRcontribution']]
+    
+    #now replace the relevant columns in gens_df
+    
+    for i in gens_df.index:
+        oris = gens_df.loc[i,'ORISPL_x']
+        count = (gens_df['ORISPL_x'] == oris).sum()
+        try:
+            potential_newcap = epa_oris_group_sum_relevantcols.loc[oris,'Capacity (MW)']/count
+        except KeyError:
+            potential_newcap = 0.0
+            
+        try:
+            potential_newheatrate = epa_oris_group_sum_relevantcols.loc[oris,'HRcontribution']
+        except KeyError:
+            potential_newheatrate = 0.0
+            
+        if potential_newcap < 0.1 and potential_newheatrate < 0.1: #
+            continue
+            #finalcapacity.append(merged_df.loc[i,'RATINGMW'])
+        elif potential_newheatrate < 0.1:
+            capscalar = potential_newcap/gens_df.loc[i,'RATINGMW_y']
+            gens_df.loc[i,'startcost'] = gens_df.loc[i,'startcost']*capscalar
+            gens_df.loc[i,'RATINGMW_y'] = potential_newcap
+        elif potential_newcap < 0.1:
+            HRscalar = (potential_newheatrate/1000)/gens_df.loc[i,'GEN_HEATRATE']
+            gens_df.loc[i,'NO_LOAD_MMBTU'] = gens_df.loc[i,'NO_LOAD_MMBTU']*HRscalar
+            gens_df.loc[i,'GEN_HEATRATE'] = potential_newheatrate/1000
+        else:
+            capscalar = potential_newcap/gens_df.loc[i,'RATINGMW_y']
+            HRscalar = (potential_newheatrate/1000)/gens_df.loc[i,'GEN_HEATRATE']
+            gens_df.loc[i,'NO_LOAD_MMBTU'] = gens_df.loc[i,'NO_LOAD_MMBTU']*capscalar*HRscalar
+            gens_df.loc[i,'GEN_HEATRATE'] = potential_newheatrate/1000
+            gens_df.loc[i,'startcost'] = gens_df.loc[i,'startcost']*capscalar
+            gens_df.loc[i,'RATINGMW_y'] = potential_newcap
+            #gens_df.loc[i,'startcost']
+    
+    return gens_df
+
 ## DUMP TO OUTPUT FILES ##
 
 def write_data(data, results_directory, init, scenario_inputs_directory, date, inputs_directory,
@@ -612,7 +664,7 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
         #if gens_w_zone.loc[i,'ID6_y']=='ST1':
         #    new_lab.append('CT')
         #else:
-        #    new_lab.append(gens_w_zone.loc[i,'ID6_y'])
+        #   new_lab.append(gens_w_zone.loc[i,'ID6_y'])
     gens_w_zone['new_ID'] = new_lab
     new_fuel_price = reassign_fuel_costs(gens_w_zone,'FuelCost',eia_923_data, gasprice_data)
     #line_df.to_csv(os.path.join(results_directory,"transmission_lines.csv"), index=False)
@@ -623,6 +675,19 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
     #gens_w_zone.to_csv(os.path.join(inputs_directory,'gens_after_fuelchange.csv'),index=False)
     #print(gens_w_zone['FuelCost'])
     print("finished re-doing gas prices")
+    
+    ###now also want to re-do capacity and heat rates
+    print("re-doing capacity and heat rates...")
+    epa_needs_data = data[20]
+    #print(epa_needs_data.head())
+    
+    #print(gens_w_zone.columns)
+    
+    #gens_w_zone.to_csv(os.path.join(inputs_directory,'beforechanges.csv'),index=False)    
+    new_gens_w_zone = redo_capacity_HR(gens_w_zone,epa_needs_data)
+    #new_gens_w_zone.to_csv(os.path.join(inputs_directory,'afterchanges.csv'),index=False)  
+    gens_w_zone = new_gens_w_zone #in case this owrks
+    print("...end re-doing capacity and heat rates")
     
     '''
     Brian's Code

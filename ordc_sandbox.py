@@ -299,6 +299,8 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     #round temperatures to nearest 1 degree, append C.
     hourly_stack_wtemp['1_rounded_temp']=hourly_stack_wtemp.Temperature.apply(lambda x: custom_round(x, 1, False))
     
+    #hourly_stack_wtemp.to_csv('htemp.csv')
+    
     #append outage probability to the df based on temperature and unit type
     #only do based on temperature if case chooses to do so...
     forced_out_df.rename(columns ={'Unnamed: 0': "Category"}, inplace =True)
@@ -316,10 +318,15 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     new_forced_outage = []
     n_gens = len(hourly_stack_wtemp.UTILUNIT.unique())
     
+    
+    prob_recover_df.columns = prob_recover_df.columns.astype(str)
+    prob_fail_df.columns = prob_fail_df.columns.astype(str)
+    
     for index in hourly_stack_wtemp.index.tolist():
         #new
         utilunit = hourly_stack_wtemp.loc[index]['UTILUNIT']
         degree_temp = hourly_stack_wtemp.loc[index]['1_rounded_temp']
+        degree_temp = str(degree_temp)
         
         recover_prob = prob_recover_df.loc[utilunit][degree_temp]
         fail_prob = prob_fail_df.loc[utilunit][degree_temp]
@@ -331,6 +338,11 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
             except KeyError:
                 init_state = 0 #assume a generator with no info about its initial state is fully available
             new_forced_outage.append(enumerate_state_probs(init_state,1,recover_prob,fail_prob))
+            #if utilunit == '417-102':
+            #    print(prob_fail_df.loc[utilunit][-20])
+            #    print(prob_fail_df.loc[utilunit][0])
+            #    print(degree_temp,recover_prob,fail_prob)
+            #    print(enumerate_state_probs(init_state,1,recover_prob,fail_prob))
         elif hourly_stack_wtemp.loc[index]['timepoint'] == 1:
             #print('default')
             try:
@@ -418,7 +430,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
         
         #lowcut_lolp = .00001 #cutoff lolp for min segment, probably want to do this as input but OK for now
         #n_segments = 10 #segments in ORDC, probably want to do this as input but OK for now
-        
+        #print(copt_table)
         max_disp = int(hourly_stack_wtemp.Dispatch[hourly_stack_wtemp.timepoint==(t)].sum())
         cutoff_disp_array = _np.where((_np.cumsum(copt_table[:,1])>lowcutLOLP)==True)
         cutoff_disp_index = min(cutoff_disp_array[0])
@@ -638,14 +650,14 @@ def convert_datestr_to_unavail_index(datestr):
 ## END HELPER FUNCTIONS ##
 
 #run this script internally to check if desired
-'''
 
+'''
 month = "Jan"
-input_directory = "C:\\Users\\llavi\\Desktop\\research\\dispatch_RA-master\\raw_data"
-results_directory = "C:\\Users\\llavi\\Desktop\\research\dispatch_RA-master\\Jan_4_10_2014_DynamicORDC\\1.4.2014\\inputs"
+input_directory = "C:\\Users\\Luke\\Desktop\\dispatch_RA_model-master\\raw_data"
+results_directory = "C:\\Users\\Luke\\Desktop\\dispatch_RA_model-master\\Jan_4_10_2014_SimpleORDCMRR\\1.4.2014\\inputs"
 ###some key inputs to overwrite
-dynamic_ORDC_input = True
-MRR_method_input = False
+dynamic_ORDC_input = False
+MRR_method_input = True
 ###
 
 #ordc_df = load_and_run_ordc(input_directory, results_directory,
@@ -656,6 +668,7 @@ ordc_df = load_and_run_ordc(input_directory, results_directory,
                                                 dates[0], primary_reserve_scalar, secondary_reserve_scalar,
                                                 MRR_method_input, MRRs, lfe, FOR_fe)
 print(ordc_df)
+ordc_df.to_csv('ordc_check.csv')
 
 
 #how long?

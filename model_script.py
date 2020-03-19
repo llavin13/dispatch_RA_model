@@ -105,10 +105,10 @@ dispatch_model.secondarysegmentMW = Param(dispatch_model.SEGMENTS, within=NonNeg
 dispatch_model.segmentprice = Param(dispatch_model.SEGMENTS, within=NonNegativeReals)
 
 #reserve segment *and* timepoint dependent params
-dispatch_model.SynchMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
-dispatch_model.NonSynchMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
-dispatch_model.SecondaryMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
-dispatch_model.price = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals)
+dispatch_model.SynchMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals, mutable=True)
+dispatch_model.NonSynchMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals, mutable=True)
+dispatch_model.SecondaryMW = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals, mutable=True)
+dispatch_model.price = Param(dispatch_model.TIMEPOINTS, dispatch_model.SEGMENTS, within=NonNegativeReals, mutable=True)
 
 #transmission line only depedent params
 dispatch_model.old = Param(dispatch_model.TRANSMISSION_LINE, within=PercentFraction)

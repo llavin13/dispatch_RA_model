@@ -83,6 +83,8 @@ def load_data(inputs_directory, scenario_inputs_directory, date):
     #load info on dual-fuel capability of gas plants from Gerad (added here 11.15.19)
     dual_fuel = pd.read_csv(os.path.join(inputs_directory,'PJM.unit.attributes.dual.LDC.11122019.csv'))
     
+    #load epa needs database data (added here 12.2.19)
+    epa_needs = pd.read_excel(os.path.join(inputs_directory,'needs_v6_09-30-19.xlsx'),sheet_name='NEEDS v6_active')
     
     #create cleaning dates
     startdate = parser.parse(date)
@@ -185,7 +187,7 @@ def load_data(inputs_directory, scenario_inputs_directory, date):
     return (base_inputs, forced_outage_rates, gens, loadMW[0], temperatures, wind, solar, loadMW[1], 
             clean_line_limits, wind_capacity, solar_capacity, clean_scheduled_outages, hydro_derates,
             clean_gas_hub_prices, clean_zonal_loads, clean_hydro_params, min_up_down_df, eia_firmgas_df,
-            eia_923_df, dual_fuel)
+            eia_923_df, dual_fuel,epa_needs)
 
 def str_to_datetime(my_str):
     '''

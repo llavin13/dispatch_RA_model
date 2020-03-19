@@ -48,25 +48,53 @@ cwd = os.getcwd()
 #load_init = False
 #load_dir = "TEST2"  
 
+#
+reference_folder = "Jan_4_10_2014_DynamicORDCMRR_CHECK2"
+#reference_folder = "Oct_19_25_2017_DynamicORDCMRR"
+use_reference_folder = True
+
 ## CREATE LINKED SCENARIO OVER MULTIPLE DAYS ##
 #enter this as a list of tuples (probably can automate this / connect to case_inputs.py at some point)
-#scenario_list = [("1.4.2014",False,"")]
-#,("1.5.2014",True,"1.4.2014"),
-scenario_list = [("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")] 
+scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
+                 ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")]
+#scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),("1.6.2014",True,"1.5.2014")]
+#scenario_list = [("10.19.2017",False,"")]
+#scenario_list = [("10.19.2017",False,""),("10.20.2017",True,"10.19.2017"),("10.21.2017",True,"10.20.2017"),("10.22.2017",True,"10.21.2017"),
+#                 ("10.23.2017",True,"10.22.2017"),("10.24.2017",True,"10.23.2017"),("10.25.2017",True,"10.24.2017")]
+
+#scenario_list = [("1.22.2014",True,"1.21.2014"),("1.23.2014",True,"1.22.2014"),
+#                 ("1.24.2014",True,"1.23.2014"),("1.25.2014",True,"1.24.2014"),("1.26.2014",True,"1.25.2014")]
+#scenario_list = [("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")] 
+
 #scenario_list = [("1.4.2014",False,"")]
 #scenario_list = [("TOY",False,"")]
 #scenario_list = [("10.19.2017",False,"")]
-#scenario_list = [("1.7.2014",False,"")]
+#scenario_list = [("10.9.2017",True,"10.8.2017")]
+#scenario_list = [("10.1.2017",False,""),("10.2.2017",True,"10.1.2017"),
+#                 ("10.3.2017",True,"10.2.2017"),("10.4.2017",True,"10.3.2017"),
+#                 ("10.5.2017",True,"10.4.2017"),("10.6.2017",True,"10.5.2017"),
+#                 ("10.7.2017",True,"10.6.2017"),("10.8.2017",True,"10.7.2017"),
+#                 ("10.9.2017",True,"10.8.2017"),("10.10.2017",True,"10.9.2017"),
+#                 ("10.11.2017",True,"10.10.2017"),("10.12.2017",True,"10.11.2017"),
+#                 ("10.13.2017",True,"10.12.2017"),("10.14.2017",True,"10.13.2017"),
+#                 ("10.15.2017",True,"10.14.2017"),("10.16.2017",True,"10.15.2017"),
+#                 ("10.17.2017",True,"10.16.2017"),("10.18.2017",True,"10.17.2017")]
+#scenario_list = [("10.25.2017",True,"10.24.2017"),
+#                 ("10.26.2017",True,"10.25.2017"),("10.27.2017",True,"10.26.2017"),
+#                 ("10.28.2017",True,"10.27.2017"),("10.29.2017",True,"10.28.2017"),
+#                 ("10.30.2017",True,"10.29.2017"),("10.31.2017",True,"10.30.2017")]
+#scenario_list = [("10.21.2017",True,"10.20.2017"),("10.22.2017",True,"10.21.2017"),
+#                 ("10.23.2017",True,"10.22.2017"),("10.24.2017",True,"10.23.2017"),
+#                 ("10.25.2017",True,"10.24.2017"),("10.26.2017",True,"10.25.2017"),
+#                 ("10.27.2017",True,"10.26.2017"),("10.28.2017",True,"10.27.2017"),
+#                 ("10.29.2017",True,"10.28.2017"),("10.30.2017",True,"10.29.2017")]
 #scenario_list = [("10.19.2017",False,"")]
 #scenario_list = [("10.20.2017.nordc",True,"10.19.2017.nordc"),("10.21.2017.nordc",True,"10.20.2017.nordc"),
 #                 ("10.22.2017.nordc",True,"10.21.2017.nordc"),("10.23.2017.nordc",True,"10.22.2017.nordc"),
 #                 ("10.24.2017.nordc",True,"10.23.2017.nordc"),("10.25.2017.nordc",True,"10.24.2017.nordc")]
 #
-#scenario_list = [("10.19.2017",False,""),("10.20.2017",True,"10.19.2017")]
-#scenario_list = [("10.19.2017",False,""),("10.20.2017",True,"10.19.2017"),
-#                 ("10.21.2017",True,"10.20.2017"),("10.22.2017",True,"10.21.2017"),
-#                 ("10.23.2017",True,"10.22.2017"),("10.24.2017",True,"10.23.2017"),
-#                 ("10.25.2017",True,"10.24.2017")]
+#scenario_list = [("10.25.2017",True,"10.24.2017")]
+
 
 # Allow user to specify solver path if needed (default assumes solver on path)
 executable=""
@@ -91,6 +119,9 @@ class DirStructure(object):
             os.mkdir(self.RESULTS_DIRECTORY)
         if not os.path.exists(self.LOGS_DIRECTORY):
             os.mkdir(self.LOGS_DIRECTORY)
+            
+    def subproblem_directories(self,reference_folder):
+        self.COMPARISON_INPUTS_DIRECTORY = os.path.join(self.DIRECTORY,reference_folder,scenario_name,"inputs")
             
 # Logging
 class Logger(object):
@@ -154,19 +185,25 @@ def solve(instance, case_type):
         instance.TotalCost.deactivate() #switch objective to exclude start-up and no-load costs
         instance.BindSegmentReserveConstraint.deactivate()
         instance.PminConstraint.deactivate()
+    elif case_type == 'CompareLP':
+        instance.TotalCost.deactivate()
+        instance.TotalCost2.activate()
+        instance.BindSegmentReserveConstraint.deactivate()
+        instance.PminConstraint.deactivate()
     # ### Solve ### #
     if executable != "":
         solver = SolverFactory("cplex", executable=executable)
         #solver.options['mip_tolerances_absmipgap'] = 0.2 #sets mip optimality gap, which is 1e-06 by default
-        solver.options['mip_tolerances_mipgap'] = 0.01
-        solver.options['parallel'] = -1 #opportunistic
-        solver.options['dettimelimit'] = 1000000
+        #solver.options['mip_tolerances_mipgap'] = 0.01
+        #solver.options['parallel'] = -1 #opportunistic
+        #solver.options['dettimelimit'] = 1000000
     else:
         solver = SolverFactory("cplex") 
+        #solver = SolverFactory("gurobi")
         #solver.options['mip_tolerances_absmipgap'] = 0.2
-        solver.options['mip_tolerances_mipgap'] = 0.01
-        solver.options['parallel'] = -1 #opportunistic
-        solver.options['dettimelimit'] = 1000000
+        #solver.options['mip_tolerances_mipgap'] = 0.0005
+        #solver.options['parallel'] = -1 #opportunistic
+        #solver.options['dettimelimit'] = 1000000
         
     print ("Solving...")
     
@@ -208,11 +245,15 @@ def run_scenario(directory_structure, load_init):
     else:
         scenario_createinputs_directory = None
     
+    #additional directory
+    reference_scenario_inputs_directory = os.path.join(directory_structure.COMPARISON_INPUTS_DIRECTORY)
+    
     # Write logs to this directory
     TempfileManager.tempdir = scenario_logs_directory
 
     # Create problem instance
     instance = create_problem_instance(scenario_inputs_directory, load_init, scenario_createinputs_directory)
+            
     
     # Create a 'dual' suffix component on the instance, so the solver plugin will know which suffixes to collect
     #instance.dual = Suffix(direction=Suffix.IMPORT)
@@ -229,7 +270,13 @@ def run_scenario(directory_structure, load_init):
     instance.dual = Suffix(direction=Suffix.IMPORT) 
     solution = solve(instance,"LP") 
     
-    # export results to csv
+    #export objective function value
+    objective_list = [value(instance.TotalCost2)]
+    objective_index = ['OriginalObjectiveValue']
+
+    ###
+
+    # export other results to csv
     write_results.export_results(instance, solution, scenario_results_directory, debug_mode=1)
     
     # THE REST OF THIS LOOP IS ONLY NEEDED FOR PLOTTING RESULTS
@@ -290,6 +337,38 @@ def run_scenario(directory_structure, load_init):
     for z in zones['zone']:
         zone_stamp.append(z)
     
+    ### ###
+    #re run model
+    instance2 = create_problem_instance(reference_scenario_inputs_directory, load_init, scenario_createinputs_directory)
+    instance.segmentdispatch.fix()
+    instance.synchreserves.fix()
+    instance.nonsynchreserves.fix()
+    instance.secondaryreserves.fix()
+    instance.transmit_power_MW.fix()
+    instance.dispatch.fix()
+    instance.commitment.fix()
+    instance.startup.fix() 
+    instance.shutdown.fix()
+    instance.preprocess()
+    
+    for t in instance.TIMEPOINTS:
+        for s in instance.SEGMENTS:
+            instance.SynchMW[t,s].value = instance2.SynchMW[t,s].value
+            instance.NonSynchMW[t,s].value = instance2.NonSynchMW[t,s].value
+            instance.SecondaryMW[t,s].value = instance2.NonSynchMW[t,s].value
+            instance.price[t,s].value = instance2.price[t,s].value
+    solution2 = solve(instance,"CompareLP")
+    
+    ###
+    
+    #export objective function value
+    objective_list.append(value(instance.TotalCost2))
+    objective_index.append('ComparisonObjectiveValue')
+    df = pd.DataFrame(objective_list, index=pd.Index(objective_index))
+    df.to_csv(os.path.join(scenario_results_directory,"comparison_objective_function_value.csv"))
+    
+    ### ###
+    
     return (results_dispatch, len(tmps), results_wind, results_solar, results_curtailment, results_starts,\
             results_shuts, price_duals, reserve_duals, results_synchreserves, len(zone_stamp),\
             transmission_duals, results_transmission_line_flow, results_nonsynchreserves, results_secondaryreserves,
@@ -308,6 +387,8 @@ for s in scenario_list:
     code_directory = cwd
     dir_str = DirStructure(code_directory, case_folder, load_init, load_dir)
     dir_str.make_directories()
+    if use_reference_folder:
+        dir_str.subproblem_directories(reference_folder)
     logger = Logger(dir_str)
     log_file = logger.log_file_path
     print("Running scenario " + str(count_case) + " of " + str(len(scenario_list)) + "...")
