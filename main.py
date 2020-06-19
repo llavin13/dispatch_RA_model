@@ -49,15 +49,19 @@ cwd = os.getcwd()
 #load_dir = "TEST2"  
 
 #
-reference_folder = "Jan_4_10_2014_DynamicORDCMRR_CHECK2"
+reference_folder = "Jan_4_10_2014_DynamicORDC_wdayof_lowcommit"
 #reference_folder = "Oct_19_25_2017_DynamicORDCMRR"
 use_reference_folder = True
 
 ## CREATE LINKED SCENARIO OVER MULTIPLE DAYS ##
 #enter this as a list of tuples (probably can automate this / connect to case_inputs.py at some point)
-scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
+#scenario_list = [("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")]
+scenario_list = [("1.4.2014",False,""),
+                 ("1.5.2014",True,"1.4.2014"),("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
                  ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")]
-#scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),("1.6.2014",True,"1.5.2014")]
+
+
+#scenario_list = [("1.4.2014",False,"")]
 #scenario_list = [("10.19.2017",False,"")]
 #scenario_list = [("10.19.2017",False,""),("10.20.2017",True,"10.19.2017"),("10.21.2017",True,"10.20.2017"),("10.22.2017",True,"10.21.2017"),
 #                 ("10.23.2017",True,"10.22.2017"),("10.24.2017",True,"10.23.2017"),("10.25.2017",True,"10.24.2017")]
@@ -179,15 +183,28 @@ def solve(instance, case_type):
     """
     #Choose active/inactive objective
     if case_type == "MIP":
+        instance.LoadConstraint.deactivate()
+        instance.DayOfLoadConstraint.deactivate()
+        instance.BindSegmentReserveConstraint.deactivate()
         instance.TotalCost2.deactivate() #deactivates the simple objective
+    elif case_type == "RUCMIP":
+        instance.DayOfLoadConstraint.activate()
+        instance.DALoadConstraint.deactivate()
+        instance.BindSegmentReserveConstraint.deactivate()
     elif case_type == "LP":
         instance.TotalCost2.activate()
         instance.TotalCost.deactivate() #switch objective to exclude start-up and no-load costs
+        instance.LoadConstraint.activate()
+        instance.DayOfLoadConstraint.deactivate()
+        instance.DALoadConstraint.deactivate()
         instance.BindSegmentReserveConstraint.deactivate()
         instance.PminConstraint.deactivate()
     elif case_type == 'CompareLP':
         instance.TotalCost.deactivate()
         instance.TotalCost2.activate()
+        instance.LoadConstraint.activate()
+        instance.DayOfLoadConstraint.deactivate()
+        instance.DALoadConstraint.deactivate()
         instance.BindSegmentReserveConstraint.deactivate()
         instance.PminConstraint.deactivate()
     # ### Solve ### #
@@ -201,8 +218,8 @@ def solve(instance, case_type):
         solver = SolverFactory("cplex") 
         #solver = SolverFactory("gurobi")
         #solver.options['mip_tolerances_absmipgap'] = 0.2
-        #solver.options['mip_tolerances_mipgap'] = 0.0005
-        #solver.options['parallel'] = -1 #opportunistic
+        solver.options['mip_tolerances_mipgap'] = 0.001
+        solver.options['parallel'] = -1 #opportunistic
         #solver.options['dettimelimit'] = 1000000
         
     print ("Solving...")
@@ -259,8 +276,11 @@ def run_scenario(directory_structure, load_init):
     #instance.dual = Suffix(direction=Suffix.IMPORT)
     
     solution = solve(instance,"MIP") #solve MIP with commitment
-
-    print ("Done running MIP, relaxing to LP to obtain duals...")
+    print("done running DA MIP, running RUC")
+    instance.nonQSCcommitment.fix()
+    instance.preprocess()
+    solution = solve(instance,"RUCMIP")
+    print ("Done running MIP & RUC, relaxing to LP to obtain duals...")
      
     #fix binary variables to relax to LP
     instance.commitment.fix()

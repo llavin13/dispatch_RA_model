@@ -54,6 +54,8 @@ dispatch_model.GENERATORSEGMENTS = Set(ordered=True)
 
 #time and zone-dependent params
 dispatch_model.grossload = Param(dispatch_model.TIMEPOINTS, dispatch_model.ZONES, within=NonNegativeReals)
+dispatch_model.daload = Param(dispatch_model.TIMEPOINTS, dispatch_model.ZONES, within=NonNegativeReals)
+dispatch_model.dayofload = Param(dispatch_model.TIMEPOINTS, dispatch_model.ZONES, within=NonNegativeReals)
 dispatch_model.windcf = Param(dispatch_model.TIMEPOINTS, dispatch_model.ZONES, within=NonNegativeReals)
 dispatch_model.solarcf = Param(dispatch_model.TIMEPOINTS, dispatch_model.ZONES, within=NonNegativeReals)
 dispatch_model.maxhydro = Param(dispatch_model.TIMEPOINTS, dispatch_model.ZONES, within=NonNegativeReals)
@@ -150,6 +152,25 @@ def quick_start_resources_init(model):
 
 dispatch_model.QUICK_START_GENERATORS = Set(within=dispatch_model.GENERATORS, initialize=quick_start_resources_init)
 
+# non-QSC
+def non_quick_start_resources_init(model):
+    non_quick_start_resources = list()
+    for g in model.GENERATORS:
+        if model.cannonspin[g]!=1.:
+            non_quick_start_resources.append(g)
+    return non_quick_start_resources
+dispatch_model.NON_QUICK_START_GENERATORS = Set(within=dispatch_model.GENERATORS, initialize=non_quick_start_resources_init)
+
+def dr_resources_init(model):
+    dr_resources = list()
+    for g in model.GENERATORS:
+        if model.fuelcost[g]>=1999 and model.pmin[g]==0.:
+            dr_resources.append(g)
+    return dr_resources
+dispatch_model.DR_GENERATORS = Set(within=dispatch_model.GENERATORS, initialize=dr_resources_init)
+
+#gen capacity with scheduled outage factored in
+
 #subsets generators in zones that are part of a SINGLE reserve subzone for which want to check reserve sufficiency
 def reserve_subzone_gens_init(model):
     sub_zone_gens = list()
@@ -237,9 +258,23 @@ dispatch_model.startup = Var(dispatch_model.TIMEPOINTS, dispatch_model.GENERATOR
 dispatch_model.shutdown = Var(dispatch_model.TIMEPOINTS, dispatch_model.GENERATORS,
                                within=Binary, initialize=0)
 
+#commitment stats of non-qsc
+dispatch_model.nonQSCcommitment = Var(dispatch_model.TIMEPOINTS, dispatch_model.NON_QUICK_START_GENERATORS,
+                                      within=Binary, initialize=0)
+
 ###########################
 # ##### CONSTRAINTS ##### #
 ###########################
+
+## additional DR constraint to commit it, 6.13.20 ##
+def DRCommittedRule(model, t, dr_g):
+    return model.commitment[t,dr_g]==1.
+dispatch_model.DRCommitConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.DR_GENERATORS, rule=DRCommittedRule)
+
+#additionnal commitment constraint applied only to non-QSC ##
+def EqualCommitRule(model,t,qsc_g):
+    return model.commitment[t,qsc_g]==model.nonQSCcommitment[t,qsc_g]
+dispatch_model.NonQSCCommitConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.NON_QUICK_START_GENERATORS,rule=EqualCommitRule)
 
 ## RENEWABLES ##
 
@@ -301,7 +336,43 @@ dispatch_model.TxToConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_m
 
 ## LOAD BALANCE ##
 
-#load/gen balance
+#load balance with DA loads (added June 2020)
+def DALoadRule(model, t, z):
+    
+    #implement total tx flow
+    imports_exports = 0
+    for line in model.TRANSMISSION_LINE:
+        if model.transmission_to[t, line] == z or model.transmission_from[t, line] == z:
+            if model.transmission_to[t, line] == z:
+                imports_exports += model.transmit_power_MW[t, line]
+            elif model.transmission_from[t, line] == z:
+                imports_exports -= model.transmit_power_MW[t, line]
+            #add additional note to dec import/exports by line losses
+            #no, this will just be done as a hurdle rate 
+    #full constraint, with tx flow now
+    return (sum(model.dispatch[t,g,z] for g in model.GENERATORS) + model.windgen[t,z] +\
+            model.solargen[t,z] + imports_exports == model.daload[t,z])
+dispatch_model.DALoadConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.ZONES, rule=DALoadRule)
+
+def DayOfLoadRule(model, t, z):
+    
+    #implement total tx flow
+    imports_exports = 0
+    for line in model.TRANSMISSION_LINE:
+        if model.transmission_to[t, line] == z or model.transmission_from[t, line] == z:
+            if model.transmission_to[t, line] == z:
+                imports_exports += model.transmit_power_MW[t, line]
+            elif model.transmission_from[t, line] == z:
+                imports_exports -= model.transmit_power_MW[t, line]
+            #add additional note to dec import/exports by line losses
+            #no, this will just be done as a hurdle rate 
+    #full constraint, with tx flow now
+    return (sum(model.dispatch[t,g,z] for g in model.GENERATORS) + model.windgen[t,z] +\
+            model.solargen[t,z] + imports_exports == model.dayofload[t,z])
+dispatch_model.DayOfLoadConstraint = Constraint(dispatch_model.TIMEPOINTS, dispatch_model.ZONES, rule=DayOfLoadRule)
+
+
+#load/gen balance with actual loads
 def LoadRule(model, t, z):
     
     #implement total tx flow

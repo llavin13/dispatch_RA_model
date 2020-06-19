@@ -70,14 +70,14 @@ def PJM_reserves(raw_input_dir, case_dir,
     load_df = pd.read_csv(os.path.join(case_dir,"timepoints_zonal.csv"))
     
     #create hourly load
-    hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
-    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
+    hourly_loads = load_df.groupby("timepoint")["da_load"].sum() #as pd series
+    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'da_load':hourly_loads.values})
     
     da_forecast_error = lfe+FOR_fe #as decimal
     
     #multiply forecast error by hourly load to get reserve requirement, as appears to have been practice
     #really this should take into account the probability of being short, but it doesn't appear historically that's what PJM did
-    hourly_loads['da_reserve_requirement'] = hourly_loads.gross_load*da_forecast_error
+    hourly_loads['da_reserve_requirement'] = hourly_loads.da_load*da_forecast_error
     reserve_requirement_np = hourly_loads["da_reserve_requirement"].values #will give the np array
     
     #now create the lists for output
@@ -164,14 +164,14 @@ def load_and_run_ordc(raw_input_dir, case_dir,
     #and get the da forecast errors
     
     #create hourly load
-    hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
-    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
+    hourly_loads = load_df.groupby("timepoint")["da_load"].sum() #as pd series
+    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'da_load':hourly_loads.values})
     
     da_forecast_error = lfe+FOR_fe #as decimal
     
     #multiply forecast error by hourly load to get reserve requirement, as appears to have been practice
     #really this should take into account the probability of being short, but it doesn't appear historically that's what PJM did
-    hourly_loads['da_reserve_requirement'] = hourly_loads.gross_load*da_forecast_error
+    hourly_loads['da_reserve_requirement'] = hourly_loads.da_load*da_forecast_error
     reserve_requirement_np = hourly_loads["da_reserve_requirement"].values #will give the np array
     
     if MRR_method:
@@ -220,8 +220,8 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     gen_type_capacity['Month_Capacity_Derated'] = derate_capacity
     
     #create hourly load
-    hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
-    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
+    hourly_loads = load_df.groupby("timepoint")["da_load"].sum() #as pd series
+    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'da_load':hourly_loads.values})
     #dec load by wind and solar to get net load to be served by dispatchable gens
     hourly_cf = load_df.groupby("timepoint")["wind_cf","solar_cf"].mean()
     hourly_all = pd.merge(hourly_loads, hourly_cf, on="timepoint")
@@ -234,7 +234,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     hourly_all["Solar_Capacity"] = solar_list
     hourly_all["Solar_Output"] = hourly_all["Solar_Capacity"]*hourly_all["solar_cf"] 
     #create net load column
-    hourly_all["net_load"] = hourly_all["gross_load"] - hourly_all["Solar_Output"] - hourly_all["Wind_Output"]
+    hourly_all["net_load"] = hourly_all["da_load"] - hourly_all["Solar_Output"] - hourly_all["Wind_Output"]
     hourly_all=hourly_all.set_index("timepoint")
     
     #create hourly gen stacks

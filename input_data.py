@@ -97,6 +97,8 @@ def scenario_inputs(inputs_directory):
 
     data.load(filename=os.path.join(inputs_directory, "timepoints_zonal.csv"),
               param=(model_script.dispatch_model.grossload,
+                     model_script.dispatch_model.daload,
+                     model_script.dispatch_model.dayofload,
                      model_script.dispatch_model.windcf,
                      model_script.dispatch_model.solarcf,
                      model_script.dispatch_model.maxhydro,
