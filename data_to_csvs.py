@@ -371,7 +371,7 @@ def create_scheduled_outage_file(n_timepoints, list_gens, unitmatch_ID, outage_s
                 match_time = int((t-1)/length_day) 
                 scheduled_out = outage_schedule.iloc[match_time][match_ID] #reindexed because these are daily now
                 #scheduled_out = outage_schedule.iloc[t-1][match_ID] #old indexing
-            except (KeyError, TypeError) as e: #this is for when the ID doesn't work
+            except (KeyError, TypeError,IndexError) as e: #this is for when the ID doesn't work
                 scheduled_out = 0 #just assume generator is fully available if it cannot match
             time_list.append(t)
             gens_list.append(g)

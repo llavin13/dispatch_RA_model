@@ -11,23 +11,29 @@ Created on Thu Apr 18 08:46:48 2019
 # case_folder = "Jan_20_26_2014_PJMHistorical" #Jan_4_10_2014_base_30pcttx
 # case_folder = "Oct_19_25_2017_SimpleORDC"
 
-#case_folder = "Oct_19_25_2017_SimpleORDC"
-case_folder = "Jan_4_10_2014_DynamicORDC_wdayof_lowcommit"
+case_folder = "Oct_19_25_2017_PJMHistorical_allmonth"
+#case_folder = "Jan_4_10_2014_NoReserves"
 # then do one where change SUC of CTs
 # case_folder = "TOYCASE"
 
 # initialization boolean list should match length of dates
 # make_init_list = [False]
-make_init_list = [True, False, False, False, False, False, False]  # ,False,
+#make_init_list = [True, False, False, False, False, False, False]  # ,False,
 #                  False,False,False,False,False,False,False,False,False,False]
 # make_init_list = [False, False, False]
-# make_init_list = [False]
-# make_init_list = [False, False, False, False]
+'''
+make_init_list = [True,False,False,False,False,False,False,
+                  False,False,False,False,False,False,
+                  False,False,False,False,False,False,
+                  False,False,False,False,False,False,
+                  False,False,False,False,False,False]
+'''
+make_init_list = [False]
 
-create_supp_ordc = True  # this chooses whether to create ORDC
+create_supp_ordc = False  # this chooses whether to create ORDC
 
 # if create_supp_ordc=False, chooses whether to use PJM heuristic or NO reserves
-PJM_reserve_heuristic = False
+PJM_reserve_heuristic = True
 
 # if supp ORDC, chooses whether to dynamically calculate it
 dynamic_ORDC = False  # setting this to False again needs testing
@@ -43,25 +49,33 @@ MRRs = {
 }  # secondary minimum reserve requirements will be based on forecast error inputs
 
 # where to pull hydro data
-hydro_sheet = "PJM.hydro.gen.jan.2014"
-#hydro_sheet = "PJM.hydro.gen.oct.2017"
+#hydro_sheet = "PJM.hydro.gen.jan.2014"
+hydro_sheet = "PJM.hydro.gen.oct.2017"
 
 # generator segment pieces
 n_generator_segments = 4
 
 # (1) specify dates to run in list (note: each day is run separately)
 # dates = ['10.7.2017']
-# dates = ['10.26.2017','10.27.2017','10.28.2017',
-#         '10.29.2017','10.30.2017','10.31.2017']
-dates = ['1.4.2014','1.5.2014','1.6.2014','1.7.2014',
-         '1.8.2014','1.9.2014','1.10.2014']
-#dates = [
-#    "10.22.2017",
-#    "10.23.2017",
-#    "10.24.2017",
-#    "10.25.2017",
-#]
-# dates = ['10.25.2017']
+'''
+dates = ['10.1.2017','10.2.2017','10.3.2017','10.4.2017','10.5.2017',
+         '10.6.2017','10.7.2017','10.8.2017','10.9.2017','10.10.2017',
+         '10.11.2017','10.12.2017','10.13.2017','10.14.2017','10.15.2017',
+         '10.16.2017','10.17.2017','10.18.2017','10.19.2017','10.20.2017',
+         '10.21.2017','10.22.2017','10.23.2017','10.24.2017']
+'''
+#dates = ['10.25.2017','10.26.2017','10.27.2017','10.28.2017','10.29.2017','10.30.2017',
+dates = ['10.31.2017']
+#dates = ['1.4.2014','1.5.2014','1.6.2014','1.7.2014',
+#         '1.8.2014','1.9.2014','1.10.2014']
+#dates = ["10.19.2017",
+#         "10.20.2017",
+#         "10.21.2017",
+#         "10.22.2017",
+#         "10.23.2017",
+#         "10.24.2017",
+#         "10.25.2017"]
+#dates = ['1.10.2014']
 # dates = ['1.9.2014','1.10.2014']
 # dates = ['1.8.2014','1.9.2014','1.10.2014']
 # dates = ['1.20.2014','1.21.2014','1.22.2014','1.23.2014','1.24.2014','1.25.2014','1.26.2014']
