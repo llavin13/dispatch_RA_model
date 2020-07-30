@@ -54,6 +54,8 @@ def load_data(inputs_directory, scenario_inputs_directory, date):
     
     #load zonal loads
     load_data = pd.read_csv(os.path.join(inputs_directory,"PJM_zonal_loads.csv"))
+    #load also da forecast loads, added 6.12.20
+    load_da_data = pd.read_csv(os.path.join(inputs_directory,"da_rt_loads.csv"))
     
     #load generator scheduled outages
     #scheduled_outages = pd.read_csv(os.path.join(inputs_directory,"fraction.unavailable.Jan14.csv"), index_col=0)
@@ -109,6 +111,8 @@ def load_data(inputs_directory, scenario_inputs_directory, date):
     
     #clean loads
     clean_zonal_loads = zonal_load_clean(load_data, startdate+timedelta(0,hours=1), enddate+timedelta(0,hours=1))
+    #clean da loads, added 6.12.20
+    clean_da_zonal_loads = zonal_load_clean(load_da_data, startdate+timedelta(0,hours=1), enddate+timedelta(0,hours=1))
     
     #clean scheduled generator outages
     #-1 date because scheduled outages are based on what was known the previous day
@@ -187,7 +191,7 @@ def load_data(inputs_directory, scenario_inputs_directory, date):
     return (base_inputs, forced_outage_rates, gens, loadMW[0], temperatures, wind, solar, loadMW[1], 
             clean_line_limits, wind_capacity, solar_capacity, clean_scheduled_outages, hydro_derates,
             clean_gas_hub_prices, clean_zonal_loads, clean_hydro_params, min_up_down_df, eia_firmgas_df,
-            eia_923_df, dual_fuel,epa_needs)
+            eia_923_df, dual_fuel,epa_needs,clean_da_zonal_loads)
 
 def str_to_datetime(my_str):
     '''

@@ -70,14 +70,14 @@ def PJM_reserves(raw_input_dir, case_dir,
     load_df = pd.read_csv(os.path.join(case_dir,"timepoints_zonal.csv"))
     
     #create hourly load
-    hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
-    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
+    hourly_loads = load_df.groupby("timepoint")["da_load"].sum() #as pd series
+    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'da_load':hourly_loads.values})
     
     da_forecast_error = lfe+FOR_fe #as decimal
     
     #multiply forecast error by hourly load to get reserve requirement, as appears to have been practice
     #really this should take into account the probability of being short, but it doesn't appear historically that's what PJM did
-    hourly_loads['da_reserve_requirement'] = hourly_loads.gross_load*da_forecast_error
+    hourly_loads['da_reserve_requirement'] = hourly_loads.da_load*da_forecast_error
     reserve_requirement_np = hourly_loads["da_reserve_requirement"].values #will give the np array
     
     #now create the lists for output
@@ -164,14 +164,14 @@ def load_and_run_ordc(raw_input_dir, case_dir,
     #and get the da forecast errors
     
     #create hourly load
-    hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
-    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
+    hourly_loads = load_df.groupby("timepoint")["da_load"].sum() #as pd series
+    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'da_load':hourly_loads.values})
     
     da_forecast_error = lfe+FOR_fe #as decimal
     
     #multiply forecast error by hourly load to get reserve requirement, as appears to have been practice
     #really this should take into account the probability of being short, but it doesn't appear historically that's what PJM did
-    hourly_loads['da_reserve_requirement'] = hourly_loads.gross_load*da_forecast_error
+    hourly_loads['da_reserve_requirement'] = hourly_loads.da_load*da_forecast_error
     reserve_requirement_np = hourly_loads["da_reserve_requirement"].values #will give the np array
     
     if MRR_method:
@@ -183,7 +183,8 @@ def load_and_run_ordc(raw_input_dir, case_dir,
                        month, hydro_cf, VOLL, lowcutLOLP, n_segments, fixed_forced_out_df, 
                        dynamic_ORDC, scheduled_outage_df, zonal_inputs,
                        init_avail_df, prob_fail_df, prob_recover_df, generator_level_outage_magnitude_df,unit_type_outage_magnitude_df,
-                       datestr, primary_reserve_scalar, secondary_reserve_scalar, MRR_method, MRRs, reserve_requirement_np)
+                       datestr, primary_reserve_scalar, secondary_reserve_scalar, MRR_method, MRRs, reserve_requirement_np,
+                       case_dir)
 
 
 #this is a function for getting the ORDC formulation to work
@@ -192,7 +193,8 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
                 dynamic_ORDC, scheduled_outage_df, zonal_inputs,
                 init_avail_df, prob_fail_df, prob_recover_df, generator_level_outage_magnitude_df,unit_type_outage_magnitude_df,
                 datestr, primary_reserve_scalar, secondary_reserve_scalar,
-                MRR_method, MRRs, reserve_requirement_np):
+                MRR_method, MRRs, reserve_requirement_np,results_directory,
+                hour_list = [8,9,10,11]):
     
     #check loading of new frames
     #print(init_avail_df)
@@ -220,8 +222,8 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     gen_type_capacity['Month_Capacity_Derated'] = derate_capacity
     
     #create hourly load
-    hourly_loads = load_df.groupby("timepoint")["gross_load"].sum() #as pd series
-    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'gross_load':hourly_loads.values})
+    hourly_loads = load_df.groupby("timepoint")["da_load"].sum() #as pd series
+    hourly_loads = pd.DataFrame({'timepoint':hourly_loads.index, 'da_load':hourly_loads.values})
     #dec load by wind and solar to get net load to be served by dispatchable gens
     hourly_cf = load_df.groupby("timepoint")["wind_cf","solar_cf"].mean()
     hourly_all = pd.merge(hourly_loads, hourly_cf, on="timepoint")
@@ -234,7 +236,7 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
     hourly_all["Solar_Capacity"] = solar_list
     hourly_all["Solar_Output"] = hourly_all["Solar_Capacity"]*hourly_all["solar_cf"] 
     #create net load column
-    hourly_all["net_load"] = hourly_all["gross_load"] - hourly_all["Solar_Output"] - hourly_all["Wind_Output"]
+    hourly_all["net_load"] = hourly_all["da_load"] - hourly_all["Solar_Output"] - hourly_all["Wind_Output"]
     hourly_all=hourly_all.set_index("timepoint")
     
     #create hourly gen stacks
@@ -423,9 +425,38 @@ def create_ordc(gen_df, planned_out_df, load_df, wind_solar_df, temp_df, forced_
         print('original conventional dispatch for hour ' + str(t) + ' is ' + str(hourly_stack_wtemp.Dispatch[hourly_stack_wtemp.timepoint==t].sum()))
         copt_table = copt_calc(hourly_stack_wtemp[hourly_stack_wtemp.timepoint==t],manual_outage_dist,
                                generator_level_outage_magnitude_df,unit_type_outage_magnitude_df,dynamic_ORDC)
-        #if t==1:
-            #copt_df = pd.DataFrame(copt_table)
-            #copt_df.to_csv("copt_t1.csv")
+        '''
+        if t==1:
+            #print(copt_df.columns)
+            copt_df = pd.DataFrame(copt_table)
+            copt_df.columns = ["Gen","Prob"]
+            copt_df['Margin'] = copt_df['Gen'].max() - copt_df['Gen']
+            copt_df.to_csv("copt_t1.csv")
+        if t==2:
+            #print(copt_df.columns)
+            copt_df = pd.DataFrame(copt_table)
+            copt_df.columns = ["Gen","Prob"]
+            copt_df['Margin'] = copt_df['Gen'].max() - copt_df['Gen']
+            copt_df.to_csv("copt_t2.csv")
+        '''
+        for i,v in enumerate(hour_list):
+            if v==t:
+                print(v,t,i)
+                copt_df = pd.DataFrame(copt_table)
+                copt_df.columns = ["Gen","Prob"]
+                copt_df['Margin'] = copt_df['Gen'].max() - copt_df['Gen']
+                copt_df = copt_df.drop(columns=['Gen'])
+                if i==0:
+                    out_df = copt_df
+                elif i==len(hour_list)-1:
+                    out_df = pd.concat([out_df, copt_df]).groupby(['Margin']).sum().reset_index()
+                    #datewrite = datestr.replace(".","_")
+                    #out_df.to_csv(datewrite+"daycopt.csv")
+                    out_df['Prob'] = out_df['Prob']/out_df['Prob'].sum()
+                    out_df.to_csv(os.path.join(results_directory,"daycopt.csv"),index=False)
+                else:
+                    out_df = pd.concat([out_df, copt_df]).groupby(['Margin']).sum().reset_index()
+                    
         #hourly_copt_list.append(copt_calc(hourly_stack_wtemp[hourly_stack_wtemp.timepoint==t],manual_outage_dist))
         
         #lowcut_lolp = .00001 #cutoff lolp for min segment, probably want to do this as input but OK for now
@@ -653,10 +684,10 @@ def convert_datestr_to_unavail_index(datestr):
 
 '''
 month = "Jan"
-input_directory = "C:\\Users\\Luke\\Desktop\\dispatch_RA_model-master\\raw_data"
-results_directory = "C:\\Users\\Luke\\Desktop\\dispatch_RA_model-master\\Jan_4_10_2014_SimpleORDCMRR\\1.4.2014\\inputs"
+input_directory = "C:\\Users\\Luke\\Desktop\\dispatch_RA_model-dev\\raw_data"
+results_directory = "C:\\Users\\Luke\\Desktop\\dispatch_RA_model-dev\\Jan_4_10_2014_DynamicORDC\\1.10.2014\\inputs"
 ###some key inputs to overwrite
-dynamic_ORDC_input = False
+dynamic_ORDC_input = True
 MRR_method_input = True
 ###
 
@@ -665,7 +696,7 @@ MRR_method_input = True
 #                                                dates[0])
 ordc_df = load_and_run_ordc(input_directory, results_directory,
                                                 month, hydro_cf, VOLL, lowcutLOLP, 10, dynamic_ORDC_input,
-                                                dates[0], primary_reserve_scalar, secondary_reserve_scalar,
+                                                dates[6], primary_reserve_scalar, secondary_reserve_scalar,
                                                 MRR_method_input, MRRs, lfe, FOR_fe)
 print(ordc_df)
 ordc_df.to_csv('ordc_check.csv')

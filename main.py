@@ -37,7 +37,7 @@ explain purpose and use of model here
 
 start_time = time.time()
 cwd = os.getcwd()
-
+cwd = cwd.strip()
 #folder where cases are pulled from, should only need to activate for TOY
 #case_folder = "TOY"
 
@@ -49,18 +49,29 @@ cwd = os.getcwd()
 #load_dir = "TEST2"  
 
 #
-reference_folder = "Jan_4_10_2014_DynamicORDCMRR_CHECK2"
+reference_folder = "Oct_19_25_2017_PJMHistorical_allmonth"
 #reference_folder = "Oct_19_25_2017_DynamicORDCMRR"
 use_reference_folder = True
 
 ## CREATE LINKED SCENARIO OVER MULTIPLE DAYS ##
 #enter this as a list of tuples (probably can automate this / connect to case_inputs.py at some point)
-scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
-                 ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")]
-#scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),("1.6.2014",True,"1.5.2014")]
+#scenario_list = [("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")]
+#scenario_list = [("1.4.2014",False,"")]
+#                 ("1.5.2014",True,"1.4.2014"),("1.6.2014",True,"1.5.2014"),("1.7.2014",True,"1.6.2014"),
+#                 ("1.8.2014",True,"1.7.2014"),("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")]
+
+
+#scenario_list = [("1.7.2014",True,"1.6.2014"),("1.8.2014",True,"1.7.2014"),
+#                 ("1.9.2014",True,"1.8.2014"),("1.10.2014",True,"1.9.2014")]
 #scenario_list = [("10.19.2017",False,"")]
-#scenario_list = [("10.19.2017",False,""),("10.20.2017",True,"10.19.2017"),("10.21.2017",True,"10.20.2017"),("10.22.2017",True,"10.21.2017"),
-#                 ("10.23.2017",True,"10.22.2017"),("10.24.2017",True,"10.23.2017"),("10.25.2017",True,"10.24.2017")]
+#scenario_list = [("10.19.2017",True,"10.18.2017"),("10.20.2017",True,"10.19.2017"),("10.21.2017",True,"10.20.2017"),("10.22.2017",True,"10.21.2017"),
+'''               
+scenario_list = [("10.23.2017",True,"10.22.2017"),("10.24.2017",True,"10.23.2017"),
+                 ("10.25.2017",True,"10.24.2017"),("10.26.2017",True,"10.25.2017"),
+                 ("10.27.2017",True,"10.26.2017"),("10.28.2017",True,"10.27.2017"),
+                 ("10.29.2017",True,"10.28.2017"),("10.30.2017",True,"10.29.2017"),
+'''
+scenario_list = [("10.31.2017",True,"10.30.2017")]
 
 #scenario_list = [("1.22.2014",True,"1.21.2014"),("1.23.2014",True,"1.22.2014"),
 #                 ("1.24.2014",True,"1.23.2014"),("1.25.2014",True,"1.24.2014"),("1.26.2014",True,"1.25.2014")]
@@ -70,15 +81,17 @@ scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),("1.6.2014",
 #scenario_list = [("TOY",False,"")]
 #scenario_list = [("10.19.2017",False,"")]
 #scenario_list = [("10.9.2017",True,"10.8.2017")]
-#scenario_list = [("10.1.2017",False,""),("10.2.2017",True,"10.1.2017"),
-#                 ("10.3.2017",True,"10.2.2017"),("10.4.2017",True,"10.3.2017"),
-#                 ("10.5.2017",True,"10.4.2017"),("10.6.2017",True,"10.5.2017"),
-#                 ("10.7.2017",True,"10.6.2017"),("10.8.2017",True,"10.7.2017"),
-#                 ("10.9.2017",True,"10.8.2017"),("10.10.2017",True,"10.9.2017"),
-#                 ("10.11.2017",True,"10.10.2017"),("10.12.2017",True,"10.11.2017"),
-#                 ("10.13.2017",True,"10.12.2017"),("10.14.2017",True,"10.13.2017"),
-#                 ("10.15.2017",True,"10.14.2017"),("10.16.2017",True,"10.15.2017"),
-#                 ("10.17.2017",True,"10.16.2017"),("10.18.2017",True,"10.17.2017")]
+'''
+scenario_list = [("10.1.2017",False,""),("10.2.2017",True,"10.1.2017"),
+                 ("10.3.2017",True,"10.2.2017"),("10.4.2017",True,"10.3.2017"),
+                 ("10.5.2017",True,"10.4.2017"),("10.6.2017",True,"10.5.2017"),
+                 ("10.7.2017",True,"10.6.2017"),("10.8.2017",True,"10.7.2017"),
+                 ("10.9.2017",True,"10.8.2017"),("10.10.2017",True,"10.9.2017"),
+                 ("10.11.2017",True,"10.10.2017"),("10.12.2017",True,"10.11.2017"),
+                 ("10.13.2017",True,"10.12.2017"),("10.14.2017",True,"10.13.2017"),
+                 ("10.15.2017",True,"10.14.2017"),("10.16.2017",True,"10.15.2017"),
+                 ("10.17.2017",True,"10.16.2017"),("10.18.2017",True,"10.17.2017")]
+'''
 #scenario_list = [("10.25.2017",True,"10.24.2017"),
 #                 ("10.26.2017",True,"10.25.2017"),("10.27.2017",True,"10.26.2017"),
 #                 ("10.28.2017",True,"10.27.2017"),("10.29.2017",True,"10.28.2017"),
@@ -97,7 +110,7 @@ scenario_list = [("1.4.2014",False,""),("1.5.2014",True,"1.4.2014"),("1.6.2014",
 
 
 # Allow user to specify solver path if needed (default assumes solver on path)
-executable=""
+executable=r"C:\\Program Files\\IBM\\ILOG\\CPLEX_Studio129\\cplex\\bin\\x64_win64\\cplex.exe"
 
 #Directory structure, using existing files rather than creating case structure for now
 class DirStructure(object):
@@ -179,22 +192,35 @@ def solve(instance, case_type):
     """
     #Choose active/inactive objective
     if case_type == "MIP":
+        instance.LoadConstraint.deactivate()
+        instance.DayOfLoadConstraint.deactivate()
+        instance.BindSegmentReserveConstraint.deactivate()
         instance.TotalCost2.deactivate() #deactivates the simple objective
+    elif case_type == "RUCMIP":
+        instance.DayOfLoadConstraint.activate()
+        instance.DALoadConstraint.deactivate()
+        instance.BindSegmentReserveConstraint.deactivate()
     elif case_type == "LP":
         instance.TotalCost2.activate()
         instance.TotalCost.deactivate() #switch objective to exclude start-up and no-load costs
+        instance.LoadConstraint.activate()
+        instance.DayOfLoadConstraint.deactivate()
+        instance.DALoadConstraint.deactivate()
         instance.BindSegmentReserveConstraint.deactivate()
         instance.PminConstraint.deactivate()
     elif case_type == 'CompareLP':
         instance.TotalCost.deactivate()
         instance.TotalCost2.activate()
+        instance.LoadConstraint.activate()
+        instance.DayOfLoadConstraint.deactivate()
+        instance.DALoadConstraint.deactivate()
         instance.BindSegmentReserveConstraint.deactivate()
         instance.PminConstraint.deactivate()
     # ### Solve ### #
     if executable != "":
         solver = SolverFactory("cplex", executable=executable)
         #solver.options['mip_tolerances_absmipgap'] = 0.2 #sets mip optimality gap, which is 1e-06 by default
-        #solver.options['mip_tolerances_mipgap'] = 0.01
+        #solver.options['mip_tolerances_mipgap'] = 0.0005
         #solver.options['parallel'] = -1 #opportunistic
         #solver.options['dettimelimit'] = 1000000
     else:
@@ -206,12 +232,10 @@ def solve(instance, case_type):
         #solver.options['dettimelimit'] = 1000000
         
     print ("Solving...")
-    
     # to keep human-readable files for debugging, set keepfiles = True
-    
+    #TempfileManager.create_tempfile(suffix='.cplex.log')
     try:
         solution = solver.solve(instance, tee=True, keepfiles=False)
-
         #solution = solver.solve(instance, tee=True, keepfiles=False, options={'optimalitytarget':1e-5})
     except PermissionError:
         print("Yuck, a permission error")
@@ -222,7 +246,7 @@ def solve(instance, case_type):
             time.sleep(1)
             os.remove(file)
         return solve(instance, case_type)
-    
+    print('hi')
     return solution
 
 def load_solution(instance, results):
@@ -249,7 +273,9 @@ def run_scenario(directory_structure, load_init):
     reference_scenario_inputs_directory = os.path.join(directory_structure.COMPARISON_INPUTS_DIRECTORY)
     
     # Write logs to this directory
-    TempfileManager.tempdir = scenario_logs_directory
+    #print(scenario_logs_directory)
+    #print(str(scenario_logs_directory))
+    TempfileManager.tempdir = str(scenario_logs_directory)
 
     # Create problem instance
     instance = create_problem_instance(scenario_inputs_directory, load_init, scenario_createinputs_directory)
@@ -259,8 +285,11 @@ def run_scenario(directory_structure, load_init):
     #instance.dual = Suffix(direction=Suffix.IMPORT)
     
     solution = solve(instance,"MIP") #solve MIP with commitment
-
-    print ("Done running MIP, relaxing to LP to obtain duals...")
+    print("done running DA MIP, running RUC")
+    instance.nonQSCcommitment.fix()
+    instance.preprocess()
+    solution = solve(instance,"RUCMIP")
+    print ("Done running MIP & RUC, relaxing to LP to obtain duals...")
      
     #fix binary variables to relax to LP
     instance.commitment.fix()

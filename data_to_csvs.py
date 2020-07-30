@@ -80,11 +80,12 @@ def create_generator_segment_mc(segments, gens):
     
     return df
 
-def create_zonal_timepoints(zone_df, zone_list, load_df, wind_shape, solar_shape, lda_load_df, hydro_df, hydro_fracs):
+def create_zonal_timepoints(zone_df, zone_list, load_df, wind_shape, solar_shape, lda_load_df, hydro_df, hydro_fracs, da_load_df):
 
     #get the lda load df ready
     lda_load_df['ZONE'] = lda_load_df['ISO Zone']
     lda_load_df_wzone = pd.merge(lda_load_df, zone_df, on='ZONE')
+    #print(lda_load_df_wzone)
     #want to re-index by timepoint
     tmps = lda_load_df_wzone.shape[0]/len(lda_load_df_wzone.ZONE.unique())
     tmp_indices = len(lda_load_df_wzone.ZONE.unique())*list(range(1,int(tmps)+1))
@@ -93,6 +94,22 @@ def create_zonal_timepoints(zone_df, zone_list, load_df, wind_shape, solar_shape
     lda_load_df_wzone['loadmw'] = lda_load_df_wzone['Load MW']
     lda_load_df_wzone['isozone'] = lda_load_df_wzone['ISO Zone']
     
+    #make additions here to join new column from da loads
+    hour_indices = len(lda_load_df_wzone.ZONE.unique())*list(range(0,int(tmps)))
+    lda_load_df_wzone['hour'] = hour_indices
+    model_zone_df = lda_load_df_wzone.groupby(['Assigned_Zone','hour']).sum().reset_index()
+    model_zone_df['Frac'] = [l/model_zone_df['Load MW'][model_zone_df['hour']==h].sum() for h,l in zip(model_zone_df['hour'],model_zone_df['Load MW'])]
+    
+    #print(da_load_df)
+    da_load_df['ZONE'] = da_load_df['Load Region']
+    hour_indices = len(da_load_df.ZONE.unique())*list(range(0,int(tmps)))
+    da_load_df['hour'] = hour_indices
+    df_hour_group = da_load_df.groupby('hour').sum().reset_index()
+    
+    model_zone_df['DAForecast'] = [df_hour_group.at[h,'Day Ahead Load Forecast MW- Average']*v for v,h, in zip(model_zone_df['Frac'],model_zone_df['hour'])]
+    model_zone_df['DayOfForecast'] = [df_hour_group.at[h,'Day Of Load Forecast MW- Average']*v for v,h, in zip(model_zone_df['Frac'],model_zone_df['hour'])]#
+    #print(model_zone_df.head())
+    
     hydro_df['indices'] = list(range(1,load_df.shape[0]+1))
     hydro_df = hydro_df.set_index('indices')
     hydro_fracs = hydro_fracs.set_index('zone')
@@ -100,6 +117,8 @@ def create_zonal_timepoints(zone_df, zone_list, load_df, wind_shape, solar_shape
     zone_index = []
     time_index = []
     assigned_load = []
+    da_load = []
+    dof_load = []
     wind_cf = []
     solar_cf = []
     max_hydro = []
@@ -114,6 +133,8 @@ def create_zonal_timepoints(zone_df, zone_list, load_df, wind_shape, solar_shape
             zone_index.append(z)
             #assigned_load.append(load_df.iloc[t-1]*sum(zone_df.Frac_Load[zone_df.Assigned_Zone==z])) ##OLDMETHOD
             assigned_load.append(sum(lda_load_df_wzone.loadmw[(lda_load_df_wzone.index==t) & (lda_load_df_wzone.Assigned_Zone==z)]))
+            da_load.append(model_zone_df.DAForecast[(model_zone_df.Assigned_Zone==z) & (model_zone_df.hour==t-1)].values[0])
+            dof_load.append(model_zone_df.DayOfForecast[(model_zone_df.Assigned_Zone==z) & (model_zone_df.hour==t-1)].values[0])
             wind_cf.append(wind_shape.iloc[t-1])
             solar_cf.append(solar_shape.iloc[t-1])
             max_hydro.append(hydro_df.iloc[t-1]['Max']*hydro_fracs.loc[z]['hydro_frac'])
@@ -123,6 +144,8 @@ def create_zonal_timepoints(zone_df, zone_list, load_df, wind_shape, solar_shape
     {'timepoint': time_index,
      'zone': zone_index,
      'gross_load': assigned_load,
+     'da_load':da_load,
+     'dayof_load':dof_load,
      'wind_cf': wind_cf,
      'solar_cf': solar_cf,
      'max_hydro': max_hydro,
@@ -348,7 +371,7 @@ def create_scheduled_outage_file(n_timepoints, list_gens, unitmatch_ID, outage_s
                 match_time = int((t-1)/length_day) 
                 scheduled_out = outage_schedule.iloc[match_time][match_ID] #reindexed because these are daily now
                 #scheduled_out = outage_schedule.iloc[t-1][match_ID] #old indexing
-            except (KeyError, TypeError) as e: #this is for when the ID doesn't work
+            except (KeyError, TypeError,IndexError) as e: #this is for when the ID doesn't work
                 scheduled_out = 0 #just assume generator is fully available if it cannot match
             time_list.append(t)
             gens_list.append(g)
@@ -436,15 +459,23 @@ def reassign_fuel_costs(df,fuelcostcol,eia923df,gasprice_df):
     new_fuel_costs = []
     
     df_noDR = df[df['ID6_y']!='NA'] #get rid of DR
+    #for d in df_noDR.ID6_y[:20]:
+    #    print(d)
     
     merged_df = pd.merge(df_noDR,eia923df,how='left',left_on='ORISPL_x',right_on='Plant Id')
-    #print(merged_df.columns)
-    
+    #for c in merged_df.columns:
+    #    print(c)
+    #for f in merged_df.FUEL_GROUP[:20]:
+    #    print(f)
+    #for y in merged_df.ID6_y[:20]:
+    #    print(y)
     ## coal grouper ##
     st1_ids = merged_df.index[(merged_df['FUEL_GROUP']=='Coal') & (merged_df['ID6_y']=='ST1')]
     st2_ids = merged_df.index[(merged_df['FUEL_GROUP']=='Coal') & (merged_df['ID6_y']=='ST2')]
-    coal_ids = list(st1_ids)+list(st2_ids)
+    #st_ids = merged_df.index[(merged_df['FUEL_GROUP']=='Coal') & (merged_df['ID6_y']=='ST')]
+    coal_ids = list(st1_ids)+list(st2_ids)#list(st_ids)#
     coal_df = merged_df.loc[coal_ids,:]
+    
     coal_df_oris_group = coal_df.groupby(['ORISPL_y','STATE','Plant Name','Purchase Type','FUEL_GROUP','FUEL_COST','Regulated'],as_index=False).mean()
     coal_df_oris_group['$TOTAL_PAYMENT'] = coal_df_oris_group['FUEL_COST']*coal_df_oris_group['QUANTITY']*.01 #total pmt
     coal_df_oris_only = coal_df_oris_group.groupby(['ORISPL_y']).sum() #group on ORISPL ONLY
@@ -809,7 +840,7 @@ def write_data(data, results_directory, init, scenario_inputs_directory, date, i
         zone_df = create_zones(zone_file, zone_list, mad_subzone_status, data[9], data[10], data[15], hydro_frac_df) #now adds wind and solar installed data
         zone_df.to_csv(os.path.join(results_directory,"zones.csv"), index=False)
         #create timepoints/zones csv
-        timepoints_zonal_df = create_zonal_timepoints(zone_file, zone_list, loadMW, data[5], data[6], data[14], data[15], hydro_frac_df)
+        timepoints_zonal_df = create_zonal_timepoints(zone_file, zone_list, loadMW, data[5], data[6], data[14], data[15], hydro_frac_df, data[21])
         timepoints_zonal_df.to_csv(os.path.join(results_directory,"timepoints_zonal.csv"), index=False)
         #loadMW.to_csv(os.path.join(results_directory,"timepoints_zonal.csv"))
         #create transmission lines csv
